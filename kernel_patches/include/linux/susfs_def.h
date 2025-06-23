@@ -8,7 +8,10 @@
 /********/
 /* shared with userspace ksu_susfs tool */
 #define CMD_SUSFS_ADD_SUS_PATH 0x55550
+#define CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH 0x55551
+#define CMD_SUSFS_SET_SDCARD_ROOT_PATH 0x55552
 #define CMD_SUSFS_ADD_SUS_MOUNT 0x55560
+#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS 0x55561
 #define CMD_SUSFS_ADD_SUS_KSTAT 0x55570
 #define CMD_SUSFS_UPDATE_SUS_KSTAT 0x55571
 #define CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY 0x55572
@@ -45,13 +48,19 @@
  * task_struct->susfs_last_fake_mnt_id => storing last valid fake mnt_id (will be deprecated or exclusive for non-gki only)
  * task_struct->susfs_task_state => storing flag 'TASK_STRUCT_'
  */
-
 #define INODE_STATE_SUS_PATH BIT(24)
 #define INODE_STATE_SUS_MOUNT BIT(25)
 #define INODE_STATE_SUS_KSTAT BIT(26)
 #define INODE_STATE_OPEN_REDIRECT BIT(27)
+#define INODE_STATE_ANDROID_DATA_ROOT_DIR BIT(28)
+#define INODE_STATE_SDCARD_ROOT_DIR BIT(29)
 
 #define TASK_STRUCT_NON_ROOT_USER_APP_PROC BIT(24)
+
+#define ND_STATE_FILENAME_CREATE 8
+#define ND_STATE_RENAMEAT 16
+#define LOOKUP_FILENAME_CREATE		0x800000
+#define LOOKUP_RENAMEAT		0x1000000
 
 #define MAGIC_MOUNT_WORKDIR "/debug_ramdisk/workdir"
 #define DATA_ADB_UMOUNT_FOR_ZYGOTE_SYSTEM_PROCESS "/data/adb/susfs_umount_for_zygote_system_process"

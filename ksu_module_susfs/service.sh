@@ -19,6 +19,15 @@ susfs_hexpatch_prop_name "ro.boot.verifyerrorpart" "verifyerrorpart" "letsgopart
 resetprop --delete "crashrecovery.rescue_boot_count"
 EOF
 
+## Do not hide sus mounts for all processes but only non ksu process ##
+cat <<EOF >/dev/null
+# - By default the kernel hides all sus mounts for all processes,
+#   and some rooted app may rely on mounts mounted by ksu process,
+#   so here we can make it hide for non ksu process only.
+# - Though it is still recommended to set it to 0 after screen is unlocked rathn than in service.sh
+ksu_susfs hide_sus_mnts_for_all_procs 0
+EOF
+
 # NOTE: sus_su 2 can be only run during or after service stage #
 # uncomment it below to enable sus_su with mode 2 #
 #${SUSFS_BIN} sus_su 2
