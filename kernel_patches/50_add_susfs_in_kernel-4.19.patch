@@ -278,9 +278,9 @@ index 94f388e94dd1..d6e615ed077d 100644
 +		if (susfs_is_inode_sus_path(dentry->d_inode)) {
 +			error = susfs_inode_permission(dir_inode, nd->flags);
 +			if (error) {
-+				return ERR_PTR(error);
++				return error;
 +			}
-+			return ERR_PTR(-ENOENT);
++			return -ENOENT;
 +		}
 +#endif
  		/* Cached positive dentry: will open in f_op->open */
@@ -295,9 +295,9 @@ index 94f388e94dd1..d6e615ed077d 100644
 +			if (susfs_is_inode_sus_path(dentry->d_inode)) {
 +				error = susfs_inode_permission(dir_inode, nd->flags);
 +				if (error) {
-+					return ERR_PTR(error);
++					return error;
 +				}
-+			return ERR_PTR(-ENOENT);
++			return -ENOENT;
 +			}
 +		}
 +#endif
@@ -313,9 +313,9 @@ index 94f388e94dd1..d6e615ed077d 100644
 +				if (susfs_is_inode_sus_path(dentry->d_inode)) {
 +					error = susfs_inode_permission(dir_inode, nd->flags);
 +					if (error) {
-+						return ERR_PTR(error);
++						return error;
 +					}
-+				return ERR_PTR(-ENOENT);
++				return -ENOENT;
 +				}
 +			}
 +#endif
@@ -331,9 +331,9 @@ index 94f388e94dd1..d6e615ed077d 100644
 +		if (susfs_is_inode_sus_path(dir->d_inode)) {
 +			int err = susfs_inode_permission(dir->d_parent->d_inode, nd->flags);
 +			if (err) {
-+				return ERR_CAST(ERR_PTR(err));
++				return err;
 +			}
-+			return ERR_CAST(ERR_PTR(-ENOENT));
++			return -ENOENT;
 +		}
 +	}
 +#endif
@@ -345,13 +345,13 @@ index 94f388e94dd1..d6e615ed077d 100644
  			goto finish_lookup;
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+		if (dentry && dentry->d_inode) {
-+			if (susfs_is_inode_sus_path(dentry->d_inode)) {
++		if (path.dentry && path.dentry->d_inode) {
++			if (susfs_is_inode_sus_path(path.dentry->d_inode)) {
 +				int err = susfs_inode_permission(dir->d_inode, nd->flags);
 +				if (err) {
-+					return ERR_CAST(ERR_PTR(err));
++					return err;
 +				}
-+				return ERR_CAST(ERR_PTR(-ENOENT));
++				return -ENOENT;
 +			}
 +		}
 +#endif
@@ -1484,11 +1484,11 @@ index 3c5ce8a0ddc9..88abf12b96f0 100644
  
 @@ -401,6 +581,9 @@ static int compat_fillonedir(struct dir_context *ctx, const char *name,
  
- 	if (buf->result)
- 		return -EINVAL;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	struct inode *inode;
 +#endif
+ 	if (buf->result)
+ 		return -EINVAL;
  	buf->result = verify_dirent_name(name, namlen);
  	if (buf->result < 0)
  		return buf->result;
