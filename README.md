@@ -9,27 +9,29 @@
 ## Compatibility ##
 - The susfs kernel patches may differ for different kernel version or even on the same kernel version, you may need to create your own patches for your kernel.
 
-## Patch Instruction (For non-GKI only) ##
+## Patch Instruction (For GKI Kernel only and building from official google artifacts) ##
 **- Prerequisite -**
-1. All susfs patches are based on the **original official KernelSU (the one from weishu)** with **latest release tag**, so you should clone his repo with **latest release tag** for a better patching result.
-2. After cloning the KernelSU to your kernel source, inside KernelSU folder, apply a revert commit from `https://github.com/tiann/KernelSU/commit/898e9d4f8ca9b2f46b0c6b36b80a872b5b88d899`
-3. Also you have to manually implement the NON-KPROBE hooks in the kernel by yourself since `SUS_SU` feature is NOT supported for NON-GKI kernel anymore. See `https://kernelsu.org/guide/how-to-integrate-for-non-gki.html#manually-modify-the-kernel-source`
-4. Replace all lines starting with `#ifdef CONFIG_KPROBES` to `#if defined(CONFIG_KPROBES) && 0` for all files within KernelSU folder, this is to tell KernelSU not to use any kprobe hooks.
-5. SUSFS now supports AUTO_ADD_ features for Magick Mount KernelSU as long as you have `KSU_SUSFS_HAS_MAGIC_MOUNT` feature enabled.
+1. All susfs patches are mainly based on the **original official KernelSU (the one from weishu)** with **tag / release tag**, so you should clone his repo with **tag / release tag** and clone this susfs branch with a **tag / release tag** or up to a commit message containing **"Bump version to vX.X.X"** to get a better patching result.
+2. SUSFS now supports AUTO_ADD_ features for Magick Mount KernelSU as long as you have `KSU_SUSFS_HAS_MAGIC_MOUNT` feature enabled.
 
 **- Apply SUSFS patches -**
-1. Clone the repo with a tag or release version, as they are more stable in general.
-2. Run `cp ./kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch $KERNEL_ROOT/KernelSU/`
-3. Run `cp ./kernel_patches/50_add_susfs_in_kernel-<kernel_version>.patch $KERNEL_ROOT/`
-4. Run `cp ./kernel_patches/fs/* $KERNEL_ROOT/fs/`
-5. Run `cp ./kernel_patches/include/linux/* $KERNEL_ROOT/include/linux/`
-6. Run `cd $KERNEL_ROOT/KernelSU` and then `patch -p1 < 10_enable_susfs_for_ksu.patch`
-7. Run `cd $KERNEL_ROOT` and then `patch -p1 < 50_add_susfs_in_kernel.patch`, **if there are failed patches, you may try to patch them manually by yourself.**
-8. If you want to make your kernel support other KSU manager variant, you can add its own hash size and hash in `ksu_is_manager_apk()` function in `KernelSU/kernel/apk_sign.c`
-9. Make sure again to have `CONFIG_KSU` and `CONFIG_KSU_SUSFS` enabled before building the kernel, some other SUSFS feature may be disabled by default, you may enable/disable them via `menuconfig`, `kernel defconfig`, or change the `default [y|n]` option under each `config KSU_SUSFS_` option in `$KernelSU_repo/kernel/Kconfig` if you build with a new defconfig every time.
-10. If your KernelSU manager is using magic mount, then you should enable **`KSU_SUSFS_HAS_MAGIC_MOUNT`** option so that mounts can be handled by AUTO_ADD_ features.
-11. For some compilor error, please refer to the section **[Known Compilor Issues]** below.
-12. For other building tips, please refer to the section **[Other Building Tips]** below.
+1. Make sure you follow the offical KSU guild here to clone and build the kernel with KSU: `https://kernelsu.org/guide/how-to-build.html`, the kernel root directory should be `$KERNEL_REPO/common`, you should run script to clone KernelSU in `$KERNEL_REPO`, **make sure you clone with a tag version**
+2. Clone this susfs branch with a **tag / release tag** or up to a commit message containing **"Bump version to vX.X.X"**, as they are more stable in general.
+3. Run `cp ./kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch $KERNEL_REPO/KernelSU/`
+4. Run `cp ./kernel_patches/50_add_susfs_in_kernel-<kernel_version>.patch $KERNEL_REPO/common/`
+5. Run `cp ./kernel_patches/fs/* $KERNEL_REPO/common/fs/`
+6. Run `cp ./kernel_patches/include/linux/* $KERNEL_REPO/common/include/linux/`
+7. Run `cd $KERNEL_REPO/KernelSU` and then `patch -p1 < 10_enable_susfs_for_ksu.patch`
+8. Run `cd $KERNEL_REPO/common` and then `patch -p1 < 50_add_susfs_in_kernel.patch`, **if there are failed patches, you may try to patch them manually by yourself.**
+9. If you want to make your kernel support other KSU manager variant, you can add its own hash size and hash in `ksu_is_manager_apk()` function in `KernelSU/kernel/apk_sign.c`
+10. Make sure again to have `CONFIG_KSU` and `CONFIG_KSU_SUSFS` enabled before building the kernel, some other SUSFS feature may be disabled by default, you may enable/disable them via `menuconfig`, `kernel defconfig`, or change the `default [y|n]` option under each `config KSU_SUSFS_` option in `$KernelSU_repo/kernel/Kconfig` if you build with a new defconfig every time.
+11. If your kernel already has the **KSU non-kprobe hook patches** applied, then you have to **`DISABLE`** the `CONFIG_KSU_SUSFS_SUS_SU` option.
+12. If your KernelSU manager is using magic mount, then you should enable **`KSU_SUSFS_HAS_MAGIC_MOUNT`** option so that mounts can be handled by AUTO_ADD_ features.
+13. For `gki kernel android14` or above, if you are building from google artifacts, it is necessary to delete the file `$KERNEL_REPO/common/android/abi_gki_protected_exports_aarch64` and `$KERNEL_REPO/common/android/abi_gki_protected_exports_x86_64`, otherwise some modules like WiFi will not work. Or you can just remove those files whenever they exist in your kernel repo.
+14. If you want to flash the fresh built gki boot.img, then before you build the kernel, first you need to fix or hardcode the `local spl_date` in function `build_gki_boot_images()` in `$KERNEL_REPO/build/kernel/build_utils.sh` to match the current boot security patch level of your phone. Or you can just use magiskboot to unpack and repack the built kernel for your stock boot.img.
+15. Build and flash the kernel.
+16. For some compilor error, please refer to the section **[Known Compilor Issues]** below.
+17. For other building tips, please refer to the section **[Other Building Tips]** below.
 
 ## Build ksu_susfs userspace tool ##
 1. Run `./build_ksu_susfs_tool.sh` to build the userspace tool `ksu_susfs`, and the arm64 and arm binary will be copied to `ksu_module_susfs/tools/` as well.
@@ -81,7 +83,6 @@
    1. error: no member named 'android_kabi_reservedx' in 'struct yyyyyyyy'
 
       - Because normally the memeber `u64 android_kabi_reservedx;` doesn't exist in all structs with all kernel version below 4.19, and sometimes it is not guaranteed existed with kernel version >= 4.19 and <= 5.4, and even with GKI kernel, like some of the custom kernels has all of them disabled. So at this point if the susfs patches didn't have them patched for you, then what you need to do is to manually append the member to the end of the corresponding struct definition, it should be `u64 android_kabi_reservedx;` with the last `x` starting from `1`, like `u64 android_kabi_reserved1;`, `u64 android_kabi_reserved2;` and so on. You may also refer to patch from other branches like `kernel-4.14`, `kernel-4.9` of this repo for extra `diff` of the missing kabi members.
- 
 
 ## Other Known Issues ##
 - Some of the File Explorer Apps cannot display a files/directory properly when a specific sub path of '/sdcard' or '/storage/emulated/0' is added to sus_path
