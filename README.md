@@ -15,7 +15,7 @@
 2. SUSFS now supports AUTO_ADD_ features for Magick Mount KernelSU as long as you have `KSU_SUSFS_HAS_MAGIC_MOUNT` feature enabled.
 
 **- Apply SUSFS patches -**
-1. Make sure you follow the offical KSU guild here to clone and build the kernel with KSU: `https://kernelsu.org/guide/how-to-build.html`, the kernel root directory should be `$KERNEL_REPO/common`, you should run script to clone KernelSU in `$KERNEL_REPO`, **make sure you clone with a tag version.**
+1. Make sure you follow the offical KSU guild here to clone and build the kernel with KSU: `https://kernelsu.org/guide/how-to-build.html`, the kernel root directory should be `$KERNEL_REPO/common`, you should run script to clone KernelSU in `$KERNEL_REPO`, **make sure you clone with a tag version**
 2. Clone this susfs branch with a **tag / release tag** or up to a commit message containing **"Bump version to vX.X.X"**, as they are more stable in general.
 3. Run `cp ./kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch $KERNEL_REPO/KernelSU/`
 4. Run `cp ./kernel_patches/50_add_susfs_in_kernel-<kernel_version>.patch $KERNEL_REPO/common/`

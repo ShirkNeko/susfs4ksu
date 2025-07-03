@@ -691,91 +691,20 @@ int main(int argc, char *argv[]) {
 			if (!error)
 				printf("%s\n", version);
 		} else if (!strcmp(argv[2], "enabled_features")) {
-			char *enabled_features_buf = malloc(getpagesize()*2);
+			char *enabled_features;
 			char *ptr_buf;
-			unsigned long enabled_features;
-			int str_len;
-			if (!enabled_features_buf) {
+			size_t bufsize = getpagesize()*2;
+			enabled_features = (char *)malloc(bufsize);
+			if (!enabled_features) {
 				perror("malloc");
 				return -ENOMEM;
 			}
-			ptr_buf = enabled_features_buf;
-			prctl(KERNEL_SU_OPTION, CMD_SUSFS_SHOW_ENABLED_FEATURES, &enabled_features, NULL, &error);
+			prctl(KERNEL_SU_OPTION, CMD_SUSFS_SHOW_ENABLED_FEATURES, enabled_features, bufsize, &error);
 			PRT_MSG_IF_OPERATION_NOT_SUPPORTED(error, CMD_SUSFS_SHOW_ENABLED_FEATURES);
 			if (!error) {
-				if (enabled_features & (1 << 0)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_SUS_PATH\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_SUS_PATH\n", str_len);
-					ptr_buf += str_len;
-				}
-				if (enabled_features & (1 << 1)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_SUS_MOUNT\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_SUS_MOUNT\n", str_len);
-					ptr_buf += str_len;
-				}
-				if (enabled_features & (1 << 2)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT\n", str_len);
-					ptr_buf += str_len;
-				}
-				if (enabled_features & (1 << 3)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT\n", str_len);
-					ptr_buf += str_len;
-				}
-				if (enabled_features & (1 << 4)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_SUS_KSTAT\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_SUS_KSTAT\n", str_len);
-					ptr_buf += str_len;
-				}
-				if (enabled_features & (1 << 5)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_TRY_UMOUNT\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_TRY_UMOUNT\n", str_len);
-					ptr_buf += str_len;
-				}
-				if (enabled_features & (1 << 6)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT\n", str_len);
-					ptr_buf += str_len;
-				}
-				if (enabled_features & (1 << 7)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_SPOOF_UNAME\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_SPOOF_UNAME\n", str_len);
-					ptr_buf += str_len;
-				}
-				if (enabled_features & (1 << 8)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_ENABLE_LOG\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_ENABLE_LOG\n", str_len);
-					ptr_buf += str_len;
-				}
-				if (enabled_features & (1 << 9)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS\n", str_len);
-					ptr_buf += str_len;
-				}
-				if (enabled_features & (1 << 10)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n", str_len);
-					ptr_buf += str_len;
-				}
-				if (enabled_features & (1 << 11)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_OPEN_REDIRECT\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_OPEN_REDIRECT\n", str_len);
-					ptr_buf += str_len;
-				}
-				if (enabled_features & (1 << 12)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_SUS_SU\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_SUS_SU\n", str_len);
-					ptr_buf += str_len;
-				}
-				if (enabled_features & (1 << 13)) {
-					str_len = strlen("CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT\n");
-					strncpy(ptr_buf, "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT\n", str_len);
-					ptr_buf += str_len;
-				}
-				printf("%s", enabled_features_buf);
-				free(enabled_features_buf);
+				printf("%s", enabled_features);
 			}
+			free(enabled_features);
 		} else if (!strcmp(argv[2], "variant")) {
 			char variant[16];
 			prctl(KERNEL_SU_OPTION, CMD_SUSFS_SHOW_VARIANT, variant, NULL, &error);
