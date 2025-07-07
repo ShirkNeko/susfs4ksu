@@ -239,21 +239,17 @@ out_path_put_path:
 }
 
 static inline bool is_i_uid_in_android_data_not_allowed(uid_t i_uid) {
-	uid_t cur_uid = current_uid().val;
-
-	return (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) &&
-							(unlikely(cur_uid != i_uid)));
+	return (likely(susfs_is_current_non_root_user_app_proc()) &&
+		unlikely(current_uid().val != i_uid));
 }
 
 static inline bool is_i_uid_in_sdcard_not_allowed(void) {
-	return (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC));
+	return (likely(susfs_is_current_non_root_user_app_proc()));
 }
 
 static inline bool is_i_uid_not_allowed(uid_t i_uid) {
-	uid_t cur_uid = current_uid().val;
-
-	return (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) &&
-							(unlikely(cur_uid != i_uid)));
+	return (likely(susfs_is_current_non_root_user_app_proc()) &&
+		unlikely(current_uid().val != i_uid));
 }
 
 bool susfs_is_base_dentry_android_data_dir(struct dentry* base) {

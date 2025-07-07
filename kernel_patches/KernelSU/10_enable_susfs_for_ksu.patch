@@ -1,8 +1,8 @@
 diff --git a/kernel/Kconfig b/kernel/Kconfig
-index 67f177f4..778f1b42 100644
+index 67f177f4..63080d55 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
-@@ -16,4 +16,138 @@ config KSU_DEBUG
+@@ -16,4 +16,139 @@ config KSU_DEBUG
  	help
  	  Enable KernelSU debug mode.
  
@@ -10,6 +10,7 @@ index 67f177f4..778f1b42 100644
 +config KSU_SUSFS
 +    bool "KernelSU addon - SUSFS"
 +    depends on KSU
++    depends on THREAD_INFO_IN_TASK
 +    default y
 +    help
 +      Patch and Enable SUSFS to kernel with KernelSU.
@@ -308,7 +309,7 @@ index bed501c4..e02aa514 100644
  
  #endif
 diff --git a/kernel/core_hook.c b/kernel/core_hook.c
-index 56ccea07..5e033f5f 100644
+index 56ccea07..fc14d842 100644
 --- a/kernel/core_hook.c
 +++ b/kernel/core_hook.c
 @@ -33,6 +33,10 @@
@@ -939,7 +940,7 @@ index 56ccea07..5e033f5f 100644
 +		//   the detection, really big helps here!
 +		else if (new_uid.val >= 90000 && new_uid.val < 1000000 && susfs_is_umount_for_zygote_iso_service_enabled) {
 +			task_lock(current);
-+			current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;
++			susfs_set_current_non_root_user_app_proc();
 +			task_unlock(current);
 +			goto out_susfs_try_umount_all;
 +		}
@@ -956,7 +957,7 @@ index 56ccea07..5e033f5f 100644
 +#ifdef CONFIG_KSU_SUSFS
 +	else {
 +		task_lock(current);
-+		current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;
++		susfs_set_current_non_root_user_app_proc();
 +		task_unlock(current);
 +	}
 +#endif
