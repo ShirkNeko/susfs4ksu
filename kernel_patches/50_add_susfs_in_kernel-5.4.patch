@@ -1117,7 +1117,7 @@ index 74aeabbf0ea4..d6a1eab90e37 100644
  	inode = igrab(fsnotify_conn_inode(mark->connector));
  	if (inode) {
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+		if (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) &&
++		if (likely(susfs_is_current_non_root_user_app_proc()) &&
 +				unlikely(inode->i_state & INODE_STATE_SUS_KSTAT)) {
 +			struct path path;
 +			char *pathname = kmalloc(PAGE_SIZE, GFP_KERNEL);
@@ -1202,7 +1202,7 @@ index 156bc0ff3c48..1c80a7eb0c87 100644
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +	mnt = real_mount(file->f_path.mnt);
-+	if (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) &&
++	if (likely(susfs_is_current_non_root_user_app_proc()) &&
 +			mnt->mnt_id >= DEFAULT_SUS_MNT_ID) {
 +		for (; mnt->mnt_id >= DEFAULT_SUS_MNT_ID; mnt = mnt->mnt_parent) { }
 +	}
@@ -1818,7 +1818,7 @@ index 376543199b5a..a15298088352 100644
  void generic_fillattr(struct inode *inode, struct kstat *stat)
  {
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+	if (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) &&
++	if (likely(susfs_is_current_non_root_user_app_proc()) &&
 +			unlikely(inode->i_state & INODE_STATE_SUS_KSTAT)) {
 +		susfs_sus_ino_for_generic_fillattr(inode->i_ino, stat);
 +		stat->mode = inode->i_mode;
@@ -1849,7 +1849,7 @@ index 376543199b5a..a15298088352 100644
  	error = vfs_getattr(&path, stat, request_mask, flags);
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +	mnt = real_mount(path.mnt);
-+	if (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC)) {
++	if (likely(susfs_is_current_non_root_user_app_proc())) {
 +		for (; mnt->mnt_id >= DEFAULT_SUS_MNT_ID; mnt = mnt->mnt_parent) {}
 +	}
 +	stat->mnt_id = mnt->mnt_id;
@@ -1882,7 +1882,7 @@ index 29786598c2b5..a14a8961f011 100644
 +	struct mount *mnt;
  
 +	mnt = real_mount(path->mnt);
-+	if (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC)) {
++	if (likely(susfs_is_current_non_root_user_app_proc())) {
 +		for (; mnt->mnt_id >= DEFAULT_SUS_MNT_ID; mnt = mnt->mnt_parent) {}
 +	}
 +	error = statfs_by_dentry(mnt->mnt.mnt_root, buf);
@@ -1929,51 +1929,6 @@ index adcc8f01c316..f605a2018e64 100644
  	void *data;
  } __randomize_layout;
  
-diff --git a/include/linux/sched.h b/include/linux/sched.h
-index 8d605104dfce..45aaf756de9f 100644
---- a/include/linux/sched.h
-+++ b/include/linux/sched.h
-@@ -1523,8 +1523,15 @@ struct task_struct {
- 	ANDROID_KABI_RESERVE(3);
- 	ANDROID_KABI_RESERVE(4);
- 	ANDROID_KABI_RESERVE(5);
-+#if defined(CONFIG_KSU_SUSFS)
-+	ANDROID_KABI_USE(6, u64 susfs_task_state);
-+#else
- 	ANDROID_KABI_RESERVE(6);
-+#endif // #if defined(CONFIG_KSU_SUSFS)
- #else
-+#if defined(CONFIG_KSU_SUSFS)
-+	u64 susfs_task_state;
-+#endif
- 	struct mutex			futex_exit_mutex;
- #endif
- 
-@@ -1534,7 +1541,11 @@ struct task_struct {
- #else
- 	ANDROID_KABI_RESERVE(7);
- #endif
-+#ifdef CONFIG_KSU_SUSFS
-+	ANDROID_KABI_USE(8, u64 susfs_last_fake_mnt_id);
-+#else
- 	ANDROID_KABI_RESERVE(8);
-+#endif
- 
- #ifdef CONFIG_PACKAGE_RUNTIME_INFO
- struct package_runtime_info pkg;
-@@ -1543,6 +1554,12 @@ struct package_runtime_info pkg;
- 	 * New fields for task_struct should be added above here, so that
- 	 * they are included in the randomized portion of task_struct.
- 	 */
-+#if defined(CONFIG_KSU_SUSFS) && !defined(ANDROID_KABI_RESERVE)
-+	u64 susfs_task_state;
-+#endif
-+#if defined(CONFIG_KSU_SUSFS) && !defined(ANDROID_KABI_RESERVE)
-+	u64 susfs_last_fake_mnt_id;
-+#endif
- 	randomized_struct_fields_end
- 
- 	/* CPU-specific state of this task: */
 diff --git a/include/linux/stat.h b/include/linux/stat.h
 index 528c4baad091..56614af83d4a 100644
 --- a/include/linux/stat.h
