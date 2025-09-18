@@ -1,3 +1,6 @@
+## Fork ##
+This fork is compatible with kernel 6.1.134 and tested on Pixel 7
+
 ## Introduction ##
 - An addon root hiding kernel patches and userspace module for KernelSU.
 
