@@ -2006,10 +2006,10 @@ index 824bcc7b5dbc..1087f73ddca0 100644
  }
  
 diff --git a/kernel/sys.c b/kernel/sys.c
-index 9f8f4c1ccc65..f11691074624 100644
---- a/kernel/sys.c
+index 7595dc2..90e735e 100644
+--- a/kernel/sys.c.orig
 +++ b/kernel/sys.c
-@@ -1298,12 +1298,18 @@ static int override_release(char __user *release, size_t len)
+@@ -1298,6 +1298,9 @@ static int override_release(char __user *release, size_t len)
  	return ret;
  }
  
@@ -2019,15 +2019,17 @@ index 9f8f4c1ccc65..f11691074624 100644
  SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
  {
  	struct new_utsname tmp;
+@@ -1306,6 +1309,9 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
  
  	down_read(&uts_sem);
  	memcpy(&tmp, utsname(), sizeof(tmp));
-+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-+	susfs_spoof_uname(&tmp);
-+#endif
++	#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
++		susfs_spoof_uname(&tmp);
++	#endif
  	up_read(&uts_sem);
- 	if (copy_to_user(name, &tmp, sizeof(tmp)))
- 		return -EFAULT;
+
+ 	rcu_read_lock();
+
 diff --git a/security/selinux/avc.c b/security/selinux/avc.c
 index d93af92498f5..0b0957c8c304 100644
 --- a/security/selinux/avc.c
