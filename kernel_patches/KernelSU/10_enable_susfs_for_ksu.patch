@@ -180,22 +180,6 @@ index 5822b1be..b4907053 100644
      }
  
      return result;
-diff --git a/kernel/apk_sign.c b/kernel/apk_sign.c
-index b5b7d3a8..fa2e38a9 100644
---- a/kernel/apk_sign.c
-+++ b/kernel/apk_sign.c
-@@ -308,5 +308,10 @@ module_param_cb(ksu_debug_manager_appid, &expected_size_ops,
- 
- bool is_manager_apk(char *path)
- {
-+#ifndef CONFIG_KSU_SUSFS
-     return check_v2_signature(path, EXPECTED_SIZE, EXPECTED_HASH);
-+#else
-+    return (check_v2_signature(path, EXPECTED_SIZE, EXPECTED_HASH) ||
-+            check_v2_signature(path, 384, "7e0c6d7278a3bb8e364e0fcba95afaf3666cf5ff3c245a3b63c8833bd0445cc4")); // 5ec1cff
-+#endif // #ifndef CONFIG_KSU_SUSFS
- }
-\ No newline at end of file
 diff --git a/kernel/app_profile.c b/kernel/app_profile.c
 index 7bfedeac..a24006ea 100644
 --- a/kernel/app_profile.c
