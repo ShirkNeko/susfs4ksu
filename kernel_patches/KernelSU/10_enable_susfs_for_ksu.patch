@@ -1,5 +1,5 @@
 diff --git a/kernel/Kbuild b/kernel/Kbuild
-index 5fa11ae9..79517337 100644
+index 70511859..5ee1c52f 100644
 --- a/kernel/Kbuild
 +++ b/kernel/Kbuild
 @@ -3,7 +3,6 @@ kernelsu-objs += allowlist.o
@@ -301,7 +301,7 @@ index b2aabf08..c235486f 100644
      ksu_supercalls_exit();
  
 diff --git a/kernel/ksud.c b/kernel/ksud.c
-index 715f891f..ad2a5ae6 100644
+index 715f891f..65e7122d 100644
 --- a/kernel/ksud.c
 +++ b/kernel/ksud.c
 @@ -58,9 +58,15 @@ static void stop_init_rc_hook();
@@ -399,7 +399,7 @@ index 715f891f..ad2a5ae6 100644
 +#endif // #ifndef CONFIG_KSU_SUSFS
 +
 +#ifdef CONFIG_KSU_SUSFS
-+void ksu_handle_sys_newfstatat(int fd, loff_t *kstat_size_ptr) {
++void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr) {
 +    loff_t new_size = *kstat_size_ptr + ksu_rc_len;
 +    struct file *file = fget(fd);
 +
