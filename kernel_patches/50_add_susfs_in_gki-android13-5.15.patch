@@ -81,7 +81,7 @@ index 4f25015aa534..17e9e15af730 100644
  		return NULL;
  	return dentry->d_fsdata;
 diff --git a/fs/exec.c b/fs/exec.c
-index b1b9db56a609..b4a76aa43bb1 100644
+index b1b9db56a609..f977611ffee8 100644
 --- a/fs/exec.c
 +++ b/fs/exec.c
 @@ -65,6 +65,9 @@
@@ -101,7 +101,7 @@ index b1b9db56a609..b4a76aa43bb1 100644
 +#ifdef CONFIG_KSU_SUSFS
 +extern bool ksu_execveat_hook __read_mostly;
 +extern bool ksu_su_compat_enabled __read_mostly;
-+extern bool susfs_is_boot_completed_triggered __read_mostly;
++extern bool susfs_is_sdcard_android_data_decrypted __read_mostly;
 +extern bool __ksu_is_allow_uid_for_current(uid_t uid);
 +extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
 +			void *envp, int *flags);
@@ -121,7 +121,7 @@ index b1b9db56a609..b4a76aa43bb1 100644
 +		goto orig_flow;
 +	}
 +
-+	if (unlikely(ksu_execveat_hook || !susfs_is_boot_completed_triggered)) {
++	if (unlikely(ksu_execveat_hook || !susfs_is_sdcard_android_data_decrypted)) {
 +		ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
 +	} else if ((__ksu_is_allow_uid_for_current(current_uid().val))) {
 +		ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);
@@ -545,7 +545,7 @@ index ce97b60fe557..418f4a9080a7 100644
  	return filp;
  }
 diff --git a/fs/namespace.c b/fs/namespace.c
-index 18d2d37f1e2f..4018191019c2 100644
+index 18d2d37f1e2f..1de509e6b024 100644
 --- a/fs/namespace.c
 +++ b/fs/namespace.c
 @@ -32,10 +32,23 @@
@@ -561,7 +561,7 @@ index 18d2d37f1e2f..4018191019c2 100644
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +extern bool susfs_is_current_ksu_domain(void);
-+extern bool susfs_is_boot_completed_triggered __read_mostly;
++extern bool susfs_is_sdcard_android_data_decrypted __read_mostly;
 +
 +static DEFINE_IDA(susfs_ksu_mnt_group_ida);
 +static atomic64_t susfs_ksu_mounts = ATOMIC64_INIT(0);
@@ -600,12 +600,12 @@ index 18d2d37f1e2f..4018191019c2 100644
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +	int res;
 +
-+	/* - At frist susfs_is_boot_completed_triggered is set to false in kernel,
++	/* - At frist susfs_is_sdcard_android_data_decrypted is set to false in kernel,
 +	 *   and it is still allowed to assign our custom mnt_group_id via susfs_ksu_mnt_group_ida
-+	 *   if it is ksu mounts, until susfs_is_boot_completed_triggered is set to true
++	 *   if it is ksu mounts, until susfs_is_sdcard_android_data_decrypted is set to true
 +	 *   when boot-completed stage is triggered in core_hook.c 
 +	 */
-+	if (!susfs_is_boot_completed_triggered && mnt->mnt_id >= DEFAULT_KSU_MNT_ID) {
++	if (!susfs_is_sdcard_android_data_decrypted && mnt->mnt_id >= DEFAULT_KSU_MNT_ID) {
 +		res = ida_alloc_min(&susfs_ksu_mnt_group_ida, DEFAULT_KSU_MNT_GROUP_ID, GFP_KERNEL);
 +		goto bypass_orig_flow;
 +	}
@@ -623,15 +623,15 @@ index 18d2d37f1e2f..4018191019c2 100644
  {
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +	/* - when boot-completed stage is triggered in core_hook.c,
-+	 *   susfs_is_boot_completed_triggered will be set to true.
-+	 * - Please note that if susfs_is_boot_completed_triggered is true, then
++	 *   susfs_is_sdcard_android_data_decrypted will be set to true.
++	 * - Please note that if susfs_is_sdcard_android_data_decrypted is true, then
 +	 *   it no longer checks for the sus mnt_group_id, and the allocated
 +	 *   sus mnt_group_id will stay in kernel memory forever, and if user
 +	 *   suddenly umounts the sus mount in global mnt namespace, the ida_free()
 +	 *   function will throw error to kernel log, but it won't affect the system,
 +	 *   so it is fine.
 +	 */
-+	if (!susfs_is_boot_completed_triggered && mnt->mnt_group_id >= DEFAULT_KSU_MNT_GROUP_ID) {
++	if (!susfs_is_sdcard_android_data_decrypted && mnt->mnt_group_id >= DEFAULT_KSU_MNT_GROUP_ID) {
 +		ida_free(&susfs_ksu_mnt_group_ida, mnt->mnt_group_id);
 +		mnt->mnt_group_id = 0;
 +		return;
@@ -770,7 +770,7 @@ index 18d2d37f1e2f..4018191019c2 100644
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +	// We keep checking for ksu process only until boot-completed stage is triggered
-+	if (!susfs_is_boot_completed_triggered && susfs_is_current_ksu_domain()) {
++	if (!susfs_is_sdcard_android_data_decrypted && susfs_is_current_ksu_domain()) {
 +		mnt = susfs_alloc_sus_vfsmnt(fc->source ?: "none");
 +		atomic64_add(1, &susfs_ksu_mounts);
 +		goto bypass_orig_flow;
@@ -791,7 +791,7 @@ index 18d2d37f1e2f..4018191019c2 100644
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +	// - We do not check anymore for ksu process if boot-completed stage is triggered
 +	//   just to stop the performance loss
-+	if (susfs_is_boot_completed_triggered) {
++	if (susfs_is_sdcard_android_data_decrypted) {
 +		goto skip_checking_for_ksu_proc;
 +	}
 +
