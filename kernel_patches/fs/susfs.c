@@ -16,6 +16,7 @@
 #include <linux/random.h>
 #include <linux/kthread.h>
 #include <linux/delay.h>
+#include <linux/fsnotify_backend.h>
 #include <linux/susfs.h>
 #include "mount.h"
 
@@ -985,22 +986,124 @@ out_copy_to_user:
 	SUSFS_LOGI("CMD_SUSFS_SHOW_VERSION -> ret: %d\n", info.err);
 }
 
-/* kthread for checking if /sdcard/Android/data is accessible */
-#define SDCARD_ANDROID_DATA_PATH "/sdcard/Android/data"
-#define SDCARD_MONITOR_INTERVAL_MS 5000
-#define SDCARD_MONITOR_MAX_ATTEMPTS 60 /* 60 x 5 = 300s = 5 mins */
+/* kthread for checking if /sdcard/Android is accessible via fsnoitfy */
+/* code is straightly borrowed from KernelSU's pkg_observer.c */
+#define SDCARD_ANDROID_DATA_PATH "/sdcard/Android"
 extern void setup_selinux(const char *domain, struct cred *cred);
 extern bool susfs_is_current_ksu_domain(void);
-bool susfs_is_sdcard_android_data_decrypted __read_mostly = false;
 static struct task_struct *susfs_sdcard_monitor_thread;
+bool susfs_is_sdcard_android_data_decrypted __read_mostly = false;
+
+struct watch_dir {
+	const char *path;
+	u32 mask;
+	struct path kpath;
+	struct inode *inode;
+	struct fsnotify_mark *mark;
+};
+
+static struct fsnotify_group *g;
+
+static struct watch_dir g_watch = { .path = "/sdcard",
+									.mask = (FS_CREATE | FS_MOVE | FS_EVENT_ON_CHILD) };
+
+static int watch_one_dir(struct watch_dir *wd)
+{
+	int ret = kern_path(wd->path, LOOKUP_FOLLOW, &wd->kpath);
+	if (ret) {
+		SUSFS_LOGI("path not ready: %s (%d)\n", wd->path, ret);
+		return ret;
+	}
+	wd->inode = d_inode(wd->kpath.dentry);
+	ihold(wd->inode);
+
+	ret = add_mark_on_inode(wd->inode, wd->mask, &wd->mark);
+	if (ret) {
+		SUSFS_LOGE("Add mark failed for %s (%d)\n", wd->path, ret);
+		path_put(&wd->kpath);
+		iput(wd->inode);
+		wd->inode = NULL;
+		return ret;
+	}
+	SUSFS_LOGI("watching %s\n", wd->path);
+	return 0;
+}
+
+static void unwatch_one_dir(struct watch_dir *wd)
+{
+	if (wd->mark) {
+		fsnotify_destroy_mark(wd->mark, g);
+		fsnotify_put_mark(wd->mark);
+		wd->mark = NULL;
+	}
+	if (wd->inode) {
+		iput(wd->inode);
+		wd->inode = NULL;
+	}
+	if (wd->kpath.dentry) {
+		path_put(&wd->kpath);
+		memset(&wd->kpath, 0, sizeof(wd->kpath));
+	}
+}
+
+static int susfs_handle_sdcard_inode_event(struct fsnotify_mark *mark, u32 mask,
+											struct inode *inode, struct inode *dir,
+											const struct qstr *file_name, u32 cookie)
+{
+	static bool target_path_is_found = false;
+
+	if (!file_name)
+		return 0;
+	if (mask & FS_ISDIR)
+		return 0;
+	if (target_path_is_found)
+		return 0;
+	if (file_name->len == 7 && !memcmp(file_name->name, "Android", 7)) {
+		SUSFS_LOGI("'%s' detected, mask: %d\n", SDCARD_ANDROID_DATA_PATH, mask);
+		target_path_is_found = true;
+		unwatch_one_dir(&g_watch);
+		fsnotify_put_group(g);
+		SUSFS_LOGI("sleeping for 5 more seconds just in case some other modules are still mounting stuff\n");
+		msleep(5000);
+		SUSFS_LOGI("set susfs_is_sdcard_android_data_decrypted to true\n");
+		WRITE_ONCE(susfs_is_sdcard_android_data_decrypted, true);
+		WRITE_ONCE(susfs_sdcard_monitor_thread, NULL);
+		SUSFS_LOGI("observer exit done\n");
+	}
+	return 0;
+}
+
+static const struct fsnotify_ops fsnotify_ops = {
+	.handle_inode_event = susfs_handle_sdcard_inode_event,
+};
+
+static int add_mark_on_inode(struct inode *inode, u32 mask,
+								struct fsnotify_mark **out)
+{
+	struct fsnotify_mark *m;
+
+	m = kzalloc(sizeof(*m), GFP_KERNEL);
+	if (!m)
+		return -ENOMEM;
+
+	fsnotify_init_mark(m, g);
+	m->mask = mask;
+
+	if (fsnotify_add_inode_mark(m, inode, 0)) {
+		fsnotify_put_mark(m);
+		return -EINVAL;
+	}
+	*out = m;
+	return 0;
+}
+
 static int susfs_sdcard_monitor_fn(void *data)
 {
 	struct cred *cred = prepare_creds();
-	struct path path;
-	int err = 0, max_attempts = SDCARD_MONITOR_MAX_ATTEMPTS;
+	int ret = 0;
 
 	if (!cred) {
-		SUSFS_LOGE("Failed to prepare creds!\n");
+		SUSFS_LOGE("failed to prepare creds!\n");
 		return -ENOMEM;
 	}
 
@@ -1008,49 +1111,34 @@ static int susfs_sdcard_monitor_fn(void *data)
 	commit_creds(cred);
 
 	if (!susfs_is_current_ksu_domain()) {
-		SUSFS_LOGE("Domain is not su, exiting the thread\n");
+		SUSFS_LOGE("domain is not su, exiting the thread\n");
 		susfs_sdcard_monitor_thread = NULL;
 		return -EINVAL;
 	}
 
-	SUSFS_LOGI("Start monitoring path '%s' in loop per '%d' ms with maximum '%d' attempts\n",
-				SDCARD_ANDROID_DATA_PATH, SDCARD_MONITOR_INTERVAL_MS, SDCARD_MONITOR_MAX_ATTEMPTS);
+	SUSFS_LOGI("start monitoring path '%s' using fsnotify\n",
+				SDCARD_ANDROID_DATA_PATH);
 
-	while (!kthread_should_stop() && max_attempts > 0) {
-		err = kern_path(SDCARD_ANDROID_DATA_PATH, LOOKUP_FOLLOW, &path);
-
-		if (!err) {
-			SUSFS_LOGI("'%s' is now accessible\n", SDCARD_ANDROID_DATA_PATH);
-			path_put(&path);
-
-			SUSFS_LOGI("Sleeping for '%d' more ms just in case some other modules are still mounting stuff\n",
-						SDCARD_MONITOR_INTERVAL_MS);
-			msleep(SDCARD_MONITOR_INTERVAL_MS);
-
-			SUSFS_LOGI("set susfs_is_sdcard_android_data_decrypted to true\n");
-
-			err = 0;
-
-			goto out_finish;
-		}
-
-		max_attempts--;
-		SUSFS_LOGI("%d attempts left\n", max_attempts);
-		msleep(SDCARD_MONITOR_INTERVAL_MS);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+	g = fsnotify_alloc_group(&fsnotify_ops, 0);
+#else
+	g = fsnotify_alloc_group(&fsnotify_ops);
+#endif
+	if (IS_ERR(g)) {
+		return PTR_ERR(g);
 	}
 
-	SUSFS_LOGI("No more attempts, assuming susfs_is_sdcard_android_data_decrypted is true now\n");
+	ret = watch_one_dir(&g_watch);
 
-out_finish:
-	WRITE_ONCE(susfs_is_sdcard_android_data_decrypted, true);
-	WRITE_ONCE(susfs_sdcard_monitor_thread, NULL);
-	return err;
+	SUSFS_LOGI("observer init done, ret: %d\n", ret);
+
+	return 0;
 }
 
 void susfs_start_sdcard_monitor_fn(void) {
 	susfs_sdcard_monitor_thread = kthread_run(susfs_sdcard_monitor_fn, NULL, "susfs_sdcard_monitor");
 	if (IS_ERR(susfs_sdcard_monitor_thread)) {
-		SUSFS_LOGE("Failed to create thread susfs_sdcard_monitor\n");
+		SUSFS_LOGE("failed to create thread susfs_sdcard_monitor\n");
 		SUSFS_LOGI("set susfs_is_sdcard_android_data_decrypted to true\n");
 		susfs_is_sdcard_android_data_decrypted = true;
 	}
