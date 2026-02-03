@@ -1007,9 +1007,12 @@ static struct fsnotify_group *g;
 static struct watch_dir g_watch = { .path = "/sdcard",
 									.mask = (FS_CREATE | FS_MOVE | FS_EVENT_ON_CHILD) };
 
+static int add_mark_on_inode(struct inode *inode, u32 mask,
+								struct fsnotify_mark **out);
+
 static int watch_one_dir(struct watch_dir *wd)
 {
-	int ret = kern_path(wd->path, LOOKUP_FOLLOW, &wd->kpath);
+	int ret = kern_path(wd->path, 0, &wd->kpath);
 	if (ret) {
 		SUSFS_LOGI("path not ready: %s (%d)\n", wd->path, ret);
 		return ret;
