@@ -988,10 +988,9 @@ out_copy_to_user:
 
 /* kthread for checking if /sdcard/Android is accessible via fsnoitfy */
 /* code is straightly borrowed from KernelSU's pkg_observer.c */
-#define SDCARD_ANDROID_DATA_PATH "/sdcard/Android"
+#define SDCARD_ANDROID_DATA_PATH "/data/media/0/Android"
 extern void setup_selinux(const char *domain, struct cred *cred);
 extern bool susfs_is_current_ksu_domain(void);
-static struct task_struct *susfs_sdcard_monitor_thread;
 bool susfs_is_sdcard_android_data_decrypted __read_mostly = false;
 
 struct watch_dir {
@@ -1004,15 +1003,15 @@ struct watch_dir {
 
 static struct fsnotify_group *g;
 
-static struct watch_dir g_watch = { .path = "/sdcard",
-									.mask = (FS_CREATE | FS_MOVE | FS_EVENT_ON_CHILD) };
+static struct watch_dir g_watch = { .path = "/data/media/0", // we choose the underlying f2fs /data/media/0 instead of the FUSE /sdcard
+									.mask = (FS_EVENT_ON_CHILD | FS_ISDIR | FS_OPEN_PERM) };
 
 static int add_mark_on_inode(struct inode *inode, u32 mask,
 								struct fsnotify_mark **out);
 
 static int watch_one_dir(struct watch_dir *wd)
 {
-	int ret = kern_path(wd->path, 0, &wd->kpath);
+	int ret = kern_path(wd->path, LOOKUP_FOLLOW, &wd->kpath);
 	if (ret) {
 		SUSFS_LOGI("path not ready: %s (%d)\n", wd->path, ret);
 		return ret;
@@ -1023,30 +1022,13 @@ static int watch_one_dir(struct watch_dir *wd)
 	ret = add_mark_on_inode(wd->inode, wd->mask, &wd->mark);
 	if (ret) {
 		SUSFS_LOGE("Add mark failed for %s (%d)\n", wd->path, ret);
-		path_put(&wd->kpath);
 		iput(wd->inode);
 		wd->inode = NULL;
+		path_put(&wd->kpath);
 		return ret;
 	}
 	SUSFS_LOGI("watching %s\n", wd->path);
 	return 0;
-}
-
-static void unwatch_one_dir(struct watch_dir *wd)
-{
-	if (wd->mark) {
-		fsnotify_destroy_mark(wd->mark, g);
-		fsnotify_put_mark(wd->mark);
-		wd->mark = NULL;
-	}
-	if (wd->inode) {
-		iput(wd->inode);
-		wd->inode = NULL;
-	}
-	if (wd->kpath.dentry) {
-		path_put(&wd->kpath);
-		memset(&wd->kpath, 0, sizeof(wd->kpath));
-	}
 }
 
 static int susfs_handle_sdcard_inode_event(struct fsnotify_mark *mark, u32 mask,
@@ -1055,23 +1037,24 @@ static int susfs_handle_sdcard_inode_event(struct fsnotify_mark *mark, u32 mask,
 {
 	static bool target_path_is_found = false;
 
-	if (!file_name)
-		return 0;
-	if (mask & FS_ISDIR)
-		return 0;
-	if (target_path_is_found)
+	if (target_path_is_found || !file_name)
 		return 0;
 	if (file_name->len == 7 && !memcmp(file_name->name, "Android", 7)) {
-		SUSFS_LOGI("'%s' detected, mask: %d\n", SDCARD_ANDROID_DATA_PATH, mask);
 		target_path_is_found = true;
-		unwatch_one_dir(&g_watch);
-		fsnotify_put_group(g);
+		SUSFS_LOGI("'%s' detected, mask: 0x%x\n", SDCARD_ANDROID_DATA_PATH, mask);
 		SUSFS_LOGI("sleeping for 5 more seconds just in case some other modules are still mounting stuff\n");
 		msleep(5000);
 		SUSFS_LOGI("set susfs_is_sdcard_android_data_decrypted to true\n");
 		WRITE_ONCE(susfs_is_sdcard_android_data_decrypted, true);
-		WRITE_ONCE(susfs_sdcard_monitor_thread, NULL);
-		SUSFS_LOGI("observer exit done\n");
+		SUSFS_LOGI("cleaning up\n");
+		if (g) {
+			fsnotify_destroy_group(g);
+		}
+		if (g_watch.inode) {
+			iput(g_watch.inode);
+			g_watch.inode = NULL;
+		}
+		path_put(&g_watch.kpath);
 	}
 	return 0;
 }
@@ -1115,7 +1098,6 @@ static int susfs_sdcard_monitor_fn(void *data)
 
 	if (!susfs_is_current_ksu_domain()) {
 		SUSFS_LOGE("domain is not su, exiting the thread\n");
-		susfs_sdcard_monitor_thread = NULL;
 		return -EINVAL;
 	}
 
@@ -1133,14 +1115,13 @@ static int susfs_sdcard_monitor_fn(void *data)
 
 	ret = watch_one_dir(&g_watch);
 
-	SUSFS_LOGI("observer init done, ret: %d\n", ret);
+	SUSFS_LOGI("ret: %d\n", ret);
 
 	return 0;
 }
 
 void susfs_start_sdcard_monitor_fn(void) {
-	susfs_sdcard_monitor_thread = kthread_run(susfs_sdcard_monitor_fn, NULL, "susfs_sdcard_monitor");
-	if (IS_ERR(susfs_sdcard_monitor_thread)) {
+	if (IS_ERR(kthread_run(susfs_sdcard_monitor_fn, NULL, "susfs_sdcard_monitor"))) {
 		SUSFS_LOGE("failed to create thread susfs_sdcard_monitor\n");
 		SUSFS_LOGI("set susfs_is_sdcard_android_data_decrypted to true\n");
 		susfs_is_sdcard_android_data_decrypted = true;
