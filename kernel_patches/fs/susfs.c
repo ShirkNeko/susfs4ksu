@@ -150,7 +150,7 @@ void susfs_add_sus_path(void __user **user_info) {
 		new_list->path_len = strlen(new_list->info.target_pathname);
 		INIT_LIST_HEAD(&new_list->list);
 		spin_lock(&susfs_spin_lock_sus_path);
-		list_add_tail(&new_list->list, &LH_SUS_PATH_ANDROID_DATA);
+		list_add_tail_rcu(&new_list->list, &LH_SUS_PATH_ANDROID_DATA);
 		spin_unlock(&susfs_spin_lock_sus_path);
 		SUSFS_LOGI("target_ino: '%lu', target_pathname: '%s', i_uid: '%u', is successfully added to LH_SUS_PATH_ANDROID_DATA\n",
 					new_list->info.target_ino, new_list->target_pathname, new_list->info.i_uid);
@@ -174,7 +174,7 @@ void susfs_add_sus_path(void __user **user_info) {
 		new_list->path_len = strlen(new_list->info.target_pathname);
 		INIT_LIST_HEAD(&new_list->list);
 		spin_lock(&susfs_spin_lock_sus_path);
-		list_add_tail(&new_list->list, &LH_SUS_PATH_SDCARD);
+		list_add_tail_rcu(&new_list->list, &LH_SUS_PATH_SDCARD);
 		spin_unlock(&susfs_spin_lock_sus_path);
 		SUSFS_LOGI("target_ino: '%lu', target_pathname: '%s', i_uid: '%u', is successfully added to LH_SUS_PATH_SDCARD\n",
 					new_list->info.target_ino, new_list->target_pathname, new_list->info.i_uid);
@@ -239,7 +239,7 @@ void susfs_add_sus_path_loop(void __user **user_info) {
 	new_list->path_len = strlen(new_list->info.target_pathname);
 	INIT_LIST_HEAD(&new_list->list);
 	spin_lock(&susfs_spin_lock_sus_path);
-	list_add_tail(&new_list->list, &LH_SUS_PATH_LOOP);
+	list_add_tail_rcu(&new_list->list, &LH_SUS_PATH_LOOP);
 	spin_unlock(&susfs_spin_lock_sus_path);
 	SUSFS_LOGI("target_ino: '%lu', target_pathname: '%s', i_uid: '%u', is successfully added to LH_SUS_PATH_LOOP\n",
 				new_list->info.target_ino, new_list->target_pathname, new_list->info.i_uid);
@@ -262,7 +262,8 @@ void susfs_run_sus_path_loop(uid_t uid) {
 	struct path path;
 	struct inode *inode;
 
-	list_for_each_entry(cursor, &LH_SUS_PATH_LOOP, list) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(cursor, &LH_SUS_PATH_LOOP, list) {
 		if (!kern_path(cursor->target_pathname, 0, &path)) {
 			inode = path.dentry->d_inode;
 			spin_lock(&inode->i_lock);
@@ -272,6 +273,7 @@ void susfs_run_sus_path_loop(uid_t uid) {
 			SUSFS_LOGI("re-flag '%s' as SUS_PATH for uid: %u\n", cursor->target_pathname, uid);
 		}
 	}
+	rcu_read_unlock();
 }
 
 static inline bool is_i_uid_in_android_data_not_allowed(uid_t i_uid) {
@@ -298,12 +300,14 @@ bool susfs_is_base_dentry_sdcard_dir(struct dentry* base) {
 
 bool susfs_is_sus_android_data_d_name_found(const char *d_name) {
 	struct st_susfs_sus_path_list *cursor = NULL;
+	bool found = false;
 
 	if (d_name[0] == '\0') {
 		return false;
 	}
 
-	list_for_each_entry(cursor, &LH_SUS_PATH_ANDROID_DATA, list) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(cursor, &LH_SUS_PATH_ANDROID_DATA, list) {
 		// - we use strstr here because we cannot retrieve the dentry of fuse_dentry
 		//   and attacker can still use path travesal attack to detect the path, but
 		//   lucky we can check for the uid so it won't let them fool us
@@ -312,28 +316,34 @@ bool susfs_is_sus_android_data_d_name_found(const char *d_name) {
 			is_i_uid_in_android_data_not_allowed(cursor->info.i_uid))
 		{
 			SUSFS_LOGI("hiding path '%s'\n", cursor->target_pathname);
-			return true;
+			found = true;
+			break;
 		}
 	}
-	return false;
+	rcu_read_unlock();
+	return found;
 }
 
 bool susfs_is_sus_sdcard_d_name_found(const char *d_name) {
 	struct st_susfs_sus_path_list *cursor = NULL;
+	bool found = false;
 
 	if (d_name[0] == '\0') {
 		return false;
 	}
-	list_for_each_entry(cursor, &LH_SUS_PATH_SDCARD, list) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(cursor, &LH_SUS_PATH_SDCARD, list) {
 		if (!strncmp(d_name, cursor->info.target_pathname, cursor->path_len) &&
 		    (d_name[cursor->path_len] == '\0' || d_name[cursor->path_len] == '/') &&
 			is_i_uid_in_sdcard_not_allowed())
 		{
 			SUSFS_LOGI("hiding path '%s'\n", cursor->target_pathname);
-			return true;
+			found = true;
+			break;
 		}
 	}
-	return false;
+	rcu_read_unlock();
+	return found;
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
