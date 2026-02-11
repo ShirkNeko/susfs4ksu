@@ -432,7 +432,7 @@ index ce97b60fe557..730b07b4d501 100644
  	return filp;
  }
 diff --git a/fs/namespace.c b/fs/namespace.c
-index 18d2d37f1e2f..4f223a1d0a83 100644
+index 18d2d37f1e2f..00fd68dd24e4 100644
 --- a/fs/namespace.c
 +++ b/fs/namespace.c
 @@ -32,10 +32,22 @@
@@ -697,7 +697,7 @@ index 18d2d37f1e2f..4f223a1d0a83 100644
  	new = copy_tree(old, old->mnt.mnt_root, copy_flags);
  	if (IS_ERR(new)) {
  		namespace_unlock();
-@@ -4654,3 +4853,36 @@ const struct proc_ns_operations mntns_operations = {
+@@ -4654,3 +4853,42 @@ const struct proc_ns_operations mntns_operations = {
  	.install	= mntns_install,
  	.owner		= mntns_owner,
  };
@@ -709,28 +709,34 @@ index 18d2d37f1e2f..4f223a1d0a83 100644
 +	struct mount *mnt;
 +	int first_mnt_id = 0;
 +
-+	if (!mnt_ns) {
-+		return;
-+	}
-+
 +	// Do not reorder the mnt_id if there is no any ksu mount at all
-+	if (atomic64_read(&susfs_ksu_mounts) == 0) {
++	if (atomic64_read(&susfs_ksu_mounts) == 0)
 +		return;
-+	}
 +
-+	get_mnt_ns(mnt_ns);
++	down_read(&namespace_sem); // needed when manipulating mnt_namespace
++	lock_ns_list(mnt_ns); // needed when traversing mnt_ns->list
++	lock_mount_hash(); // needed when modifying mount
 +
++	// - It is safe here as there should not be any first mnt with the sus mnt_id,
++	//   mount cloned by ksu proc is already handled in clone_mnt()
 +	first_mnt_id = list_first_entry(&mnt_ns->list, struct mount, mnt_list)->mnt_id;
 +	list_for_each_entry(mnt, &mnt_ns->list, mnt_list) {
-+		// It is very important that we don't reorder the sus mount if it is not umounted
-+		if (mnt->mnt_id == DEFAULT_KSU_MNT_ID) {
++		// - We need to use mnt_is_cursor() to check if mnt is being looked up in
++		//   /proc/[mounts|mountinfo|mountstat], since mounts_open_common() will set 
++		//   the flag MNT_CURSOR on p->cursor.mnt.mnt_flags, skip it if so
++		if (mnt_is_cursor(mnt))
 +			continue;
-+		}
++		// It is very important that we don't reorder the sus mount if it is not umounted
++		if (mnt->mnt_id == DEFAULT_KSU_MNT_ID)
++			continue;
++		// We just still explicitly tell compiler not to optimizie this
 +		WRITE_ONCE(mnt->mnt.susfs_mnt_id_backup, READ_ONCE(mnt->mnt_id));
 +		WRITE_ONCE(mnt->mnt_id, first_mnt_id++);
 +	}
 +
-+	put_mnt_ns(mnt_ns);
++	unlock_mount_hash();
++	unlock_ns_list(mnt_ns);
++	up_read(&namespace_sem);
 +}
 +#endif
 +

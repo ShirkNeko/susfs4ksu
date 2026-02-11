@@ -16,6 +16,7 @@
 #include <linux/random.h>
 #include <linux/kthread.h>
 #include <linux/delay.h>
+#include <linux/workqueue.h>
 #include <linux/fsnotify_backend.h>
 #include <linux/susfs.h>
 #include "fuse/fuse_i.h"
@@ -140,7 +141,7 @@ void susfs_add_sus_path_loop(void __user **user_info) {
 	new_list->path_len = strlen(new_list->info.target_pathname);
 	INIT_LIST_HEAD(&new_list->list);
 	spin_lock(&susfs_spin_lock_sus_path);
-	list_add_tail(&new_list->list, &LH_SUS_PATH_LOOP);
+	list_add_tail_rcu(&new_list->list, &LH_SUS_PATH_LOOP);
 	spin_unlock(&susfs_spin_lock_sus_path);
 	SUSFS_LOGI("target_ino: '%lu', target_pathname: '%s', i_uid: '%u', is successfully added to LH_SUS_PATH_LOOP\n",
 				new_list->info.target_ino, new_list->target_pathname, new_list->info.i_uid);
@@ -158,7 +159,8 @@ void susfs_run_sus_path_loop(uid_t uid) {
 	struct inode *inode;
 	struct fuse_inode *fi = NULL;
 
-	list_for_each_entry(cursor, &LH_SUS_PATH_LOOP, list) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(cursor, &LH_SUS_PATH_LOOP, list) {
 		if (!kern_path(cursor->target_pathname, 0, &path)) {
 			inode = d_backing_inode(path.dentry);
 			if (!inode || !inode->i_mapping) {
@@ -180,6 +182,7 @@ void susfs_run_sus_path_loop(uid_t uid) {
 			SUSFS_LOGI("re-flag AS_FLAGS_SUS_PATH on path '%s' for uid: %u\n", cursor->target_pathname, uid);
 		}
 	}
+	rcu_read_unlock();
 }
 
 static inline bool is_i_uid_not_allowed(uid_t i_uid) {
@@ -902,6 +905,33 @@ static struct watch_dir g_watch = { .path = "/data/media/0", // we choose the un
 static int add_mark_on_inode(struct inode *inode, u32 mask,
 								struct fsnotify_mark **out);
 
+static unsigned long sdcard_cleanup_scheduled;
+static struct delayed_work sdcard_cleanup_dwork;
+
+static void susfs_sdcard_cleanup_fn(struct work_struct *work)
+{
+	struct fsnotify_group *grp;
+	struct inode *inode;
+
+	SUSFS_LOGI("set susfs_is_sdcard_android_data_decrypted to true\n");
+	WRITE_ONCE(susfs_is_sdcard_android_data_decrypted, true);
+
+	SUSFS_LOGI("cleaning up fsnotify sdcard watch\n");
+
+	grp = xchg(&g, NULL);
+	if (grp)
+		fsnotify_destroy_group(grp);
+
+	inode = xchg(&g_watch.inode, NULL);
+	if (inode)
+		iput(inode);
+
+	if (g_watch.kpath.mnt) {
+		path_put(&g_watch.kpath);
+		memset(&g_watch.kpath, 0, sizeof(g_watch.kpath));
+	}
+}
+
 static int watch_one_dir(struct watch_dir *wd)
 {
 	int ret = kern_path(wd->path, LOOKUP_FOLLOW, &wd->kpath);
@@ -929,32 +959,26 @@ static int watch_one_dir(struct watch_dir *wd)
 	return 0;
 }
 
+/*
+ * fsnotify handler — runs inside an SRCU read section held by fsnotify().
+ * Must not block or call fsnotify_destroy_group() (which internally calls
+ * synchronize_srcu on the same SRCU struct, causing a permanent deadlock).
+ * Cleanup is deferred to a delayed_work that runs outside the SRCU context.
+ */
 static int susfs_handle_sdcard_inode_event(struct fsnotify_mark *mark, u32 mask,
 											struct inode *inode, struct inode *dir,
 											const struct qstr *file_name, u32 cookie)
 {
-	static bool target_path_is_found = false;
-
-	if (target_path_is_found || !file_name)
+	if (!file_name || file_name->len != 7 ||
+	    memcmp(file_name->name, "Android", 7))
 		return 0;
-	if (file_name->len == 7 && !memcmp(file_name->name, "Android", 7)) {
-		target_path_is_found = true;
-		SUSFS_LOGI("'%s' detected, mask: 0x%x\n", SDCARD_ANDROID_PATH, mask);
-		SUSFS_LOGI("sleeping for 5 more seconds just in case some other modules are still mounting stuff\n");
-		msleep(5000);
-		SUSFS_LOGI("set susfs_is_sdcard_android_data_decrypted to true\n");
-		WRITE_ONCE(susfs_is_sdcard_android_data_decrypted, true);
-		SUSFS_LOGI("cleaning up\n");
 
-		if (g) {
-			fsnotify_destroy_group(g);
-		}
-		if (g_watch.inode) {
-			iput(g_watch.inode);
-			g_watch.inode = NULL;
-		}
-		path_put(&g_watch.kpath);
-	}
+	if (test_and_set_bit(0, &sdcard_cleanup_scheduled))
+		return 0;
+
+	SUSFS_LOGI("'%s' detected, mask: 0x%x\n", SDCARD_ANDROID_PATH, mask);
+	SUSFS_LOGI("deferring cleanup for 5 seconds\n");
+	queue_delayed_work(system_unbound_wq, &sdcard_cleanup_dwork, 5 * HZ);
 	return 0;
 }
 
@@ -1002,6 +1026,8 @@ static int susfs_sdcard_monitor_fn(void *data)
 
 	SUSFS_LOGI("start monitoring path '%s' using fsnotify\n",
 				SDCARD_ANDROID_PATH);
+
+	INIT_DELAYED_WORK(&sdcard_cleanup_dwork, susfs_sdcard_cleanup_fn);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
 	g = fsnotify_alloc_group(&fsnotify_ops, 0);
