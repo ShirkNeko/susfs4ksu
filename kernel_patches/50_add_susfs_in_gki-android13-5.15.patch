@@ -134,7 +134,7 @@ index b1b9db56a609..f977611ffee8 100644
  	 * We move the actual failure in case of RLIMIT_NPROC excess from
  	 * set*uid() to execve() because too many poorly written programs
 diff --git a/fs/namei.c b/fs/namei.c
-index ce97b60fe557..d88e8d4bc62a 100644
+index ce97b60fe557..ef3ca832c5f8 100644
 --- a/fs/namei.c
 +++ b/fs/namei.c
 @@ -39,10 +39,18 @@
@@ -239,12 +239,11 @@ index ce97b60fe557..d88e8d4bc62a 100644
  		if (unlikely(!dentry))
  			return NULL;
  		status = d_revalidate(dentry, nd->flags);
-@@ -1640,12 +1694,26 @@ static struct dentry *__lookup_slow(const struct qstr *name,
+@@ -1640,12 +1694,19 @@ static struct dentry *__lookup_slow(const struct qstr *name,
  	struct dentry *dentry, *old;
  	struct inode *inode = dir->d_inode;
  	DECLARE_WAIT_QUEUE_HEAD_ONSTACK(wq);
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+	DECLARE_WAIT_QUEUE_HEAD_ONSTACK(sus_wq);
 +	bool found_sus_path = false;
 +	bool is_nd_flags_lookup_last = (flags & ND_FLAGS_LOOKUP_LAST);
 +#endif
@@ -253,12 +252,6 @@ index ce97b60fe557..d88e8d4bc62a 100644
  	if (unlikely(IS_DEADDIR(inode)))
  		return ERR_PTR(-ENOENT);
  again:
-+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+	if (found_sus_path) {
-+		dentry = d_alloc_parallel(dir, &susfs_fake_qstr_name, &sus_wq);
-+		goto retry;
-+	}
-+#endif
  	dentry = d_alloc_parallel(dir, name, &wq);
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +retry:
@@ -266,7 +259,20 @@ index ce97b60fe557..d88e8d4bc62a 100644
  	if (IS_ERR(dentry))
  		return dentry;
  	if (unlikely(!d_in_lookup(dentry))) {
-@@ -1667,6 +1735,16 @@ static struct dentry *__lookup_slow(const struct qstr *name,
+@@ -1654,6 +1715,12 @@ static struct dentry *__lookup_slow(const struct qstr *name,
+ 			if (!error) {
+ 				d_invalidate(dentry);
+ 				dput(dentry);
++#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++				if (found_sus_path) {
++					dentry = d_alloc_parallel(dir, &susfs_fake_qstr_name, &wq);
++					goto retry;
++				}
++#endif
+ 				goto again;
+ 			}
+ 			dput(dentry);
+@@ -1667,6 +1734,17 @@ static struct dentry *__lookup_slow(const struct qstr *name,
  			dentry = old;
  		}
  	}
@@ -274,8 +280,9 @@ index ce97b60fe557..d88e8d4bc62a 100644
 +	if (is_nd_flags_lookup_last && !found_sus_path && dentry && !IS_ERR(dentry) && dentry->d_inode &&
 +		susfs_is_inode_sus_path(dentry->d_inode))
 +	{
++		d_lookup_done(dentry);
 +		dput(dentry);
-+		dentry = d_alloc_parallel(dir, &susfs_fake_qstr_name, &sus_wq);
++		dentry = d_alloc_parallel(dir, &susfs_fake_qstr_name, &wq);
 +		found_sus_path = true;
 +		goto retry;
 +	}
