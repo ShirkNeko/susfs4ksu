@@ -58,20 +58,10 @@
 #define AS_FLAGS_SUS_MOUNT 34
 #define AS_FLAGS_SUS_KSTAT 35
 #define AS_FLAGS_OPEN_REDIRECT 36
-#define AS_FLAGS_ANDROID_DATA_ROOT_DIR 37
-#define AS_FLAGS_SDCARD_ROOT_DIR 38
 #define AS_FLAGS_SUS_MAP 39
-#define BIT_SUS_PATH BIT(33)
-#define BIT_SUS_MOUNT BIT(34)
-#define BIT_SUS_KSTAT BIT(35)
-#define BIT_OPEN_REDIRECT BIT(36)
-#define BIT_ANDROID_DATA_ROOT_DIR BIT(37)
-#define BIT_ANDROID_SDCARD_ROOT_DIR BIT(38)
-#define BIT_SUS_MAPS BIT(39)
 
 #define ND_STATE_LOOKUP_LAST 32
 #define ND_STATE_OPEN_LAST 64
-#define ND_STATE_LAST_SDCARD_SUS_PATH 128
 #define ND_FLAGS_LOOKUP_LAST		0x2000000
  
 #define MAGIC_MOUNT_WORKDIR "/debug_ramdisk/workdir"
@@ -83,4 +73,5 @@ static inline bool susfs_is_current_proc_umounted(void) {
 static inline void susfs_set_current_proc_umounted(void) {
 	set_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
 }
+
 #endif // #ifndef KSU_SUSFS_DEF_H

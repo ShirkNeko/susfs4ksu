@@ -976,7 +976,7 @@ index b8d26982..cdac225d 100644
                                 void *__never_use_argv, void *__never_use_envp,
                                 int *__never_use_flags);
 diff --git a/kernel/supercalls.c b/kernel/supercalls.c
-index f66be06b..5ae28f1f 100644
+index 6aef3495..f87ce63c 100644
 --- a/kernel/supercalls.c
 +++ b/kernel/supercalls.c
 @@ -11,6 +11,10 @@
