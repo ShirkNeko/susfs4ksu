@@ -11,7 +11,7 @@ index 70511859..5ee1c52f 100644
  kernelsu-objs += pkg_observer.o
  kernelsu-objs += setuid_hook.o
 diff --git a/kernel/Kconfig b/kernel/Kconfig
-index cc4dbb3a..a5c52f9d 100644
+index cc4dbb3a..7382012b 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
 @@ -1,20 +1,109 @@
@@ -58,7 +58,7 @@ index cc4dbb3a..a5c52f9d 100644
 +config KSU_SUSFS_SUS_PATH
 +    bool "Enable to hide suspicious path (NOT recommended)"
 +    depends on KSU_SUSFS
-+    default n
++    default y
 +    help
 +        - Allow hiding the user-defined path and all its sub-paths from various system calls.
 +        - Includes temp fix for the leaks of app path in /sdcard/Android/data directory.
@@ -78,7 +78,7 @@ index cc4dbb3a..a5c52f9d 100644
 +config KSU_SUSFS_SUS_KSTAT
 +    bool "Enable to spoof suspicious kstat"
 +    depends on KSU_SUSFS
-+    default n
++    default y
 +    help
 +        - Allow spoofing the kstat of user-defined file/directory.
 +        - Effective only on zygote spawned user app process.
@@ -117,7 +117,7 @@ index cc4dbb3a..a5c52f9d 100644
 +config KSU_SUSFS_OPEN_REDIRECT
 +    bool "Enable to redirect a path to be opened with another path (experimental)"
 +    depends on KSU_SUSFS
-+    default n
++    default y
 +    help
 +        - Allow redirecting a target path to be opened with another user-defined path.
 +        - Effective only on processes with uid < 2000.
@@ -218,10 +218,33 @@ index 6662aeeb..f1758944 100644
      setup_mount_ns(profile->namespaces);
  }
 diff --git a/kernel/kernel_umount.c b/kernel/kernel_umount.c
-index e1d67bd9..ba06b66d 100644
+index e1d67bd9..a271c786 100644
 --- a/kernel/kernel_umount.c
 +++ b/kernel/kernel_umount.c
-@@ -108,6 +108,7 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+@@ -72,6 +72,10 @@ struct umount_tw {
+     struct callback_head cb;
+ };
+ 
++#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++extern void susfs_run_sus_path_loop(void);
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
++
+ static void umount_tw_func(struct callback_head *cb)
+ {
+     struct umount_tw *tw = container_of(cb, struct umount_tw, cb);
+@@ -86,6 +90,11 @@ static void umount_tw_func(struct callback_head *cb)
+     }
+     up_read(&mount_list_lock);
+ 
++#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++    // susfs_run_sus_path_loop() runs here with ksu_cred so that it can reach all the paths
++    susfs_run_sus_path_loop();
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
++
+     revert_creds(saved);
+ 
+     kfree(tw);
+@@ -108,6 +117,7 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
          return 0;
      }
  
@@ -229,7 +252,7 @@ index e1d67bd9..ba06b66d 100644
      // There are 5 scenarios:
      // 1. Normal app: zygote -> appuid
      // 2. Isolated process forked from zygote: zygote -> isolated_process
-@@ -131,6 +132,8 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+@@ -131,6 +141,8 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
          pr_info("handle umount ignore non zygote child: %d\n", current->pid);
          return 0;
      }
@@ -649,7 +672,7 @@ index a4ab96e8..7bec5ed4 100644
 +
  #endif
 diff --git a/kernel/setuid_hook.c b/kernel/setuid_hook.c
-index 849947c1..084bf38b 100644
+index 849947c1..a7aff098 100644
 --- a/kernel/setuid_hook.c
 +++ b/kernel/setuid_hook.c
 @@ -11,6 +11,9 @@
@@ -662,7 +685,7 @@ index 849947c1..084bf38b 100644
  
  #include "allowlist.h"
  #include "setuid_hook.h"
-@@ -19,15 +22,40 @@
+@@ -19,15 +22,34 @@
  #include "selinux/selinux.h"
  #include "seccomp_cache.h"
  #include "supercalls.h"
@@ -685,12 +708,6 @@ index 849947c1..084bf38b 100644
 +}
 +
 +extern u32 susfs_zygote_sid;
-+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+extern void susfs_run_sus_path_loop(uid_t uid);
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+extern void susfs_reorder_mnt_id(void);
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +#endif // #ifdef CONFIG_KSU_SUSFS
 +
  static void ksu_install_manager_fd_tw_func(struct callback_head *cb)
@@ -703,7 +720,7 @@ index 849947c1..084bf38b 100644
  int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
  {
      // we rely on the fact that zygote always call setresuid(3) with same uids
-@@ -72,6 +100,79 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+@@ -72,6 +94,70 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
  
      return 0;
  }
@@ -765,15 +782,6 @@ index 849947c1..084bf38b 100644
 +do_umount:
 +    // Handle kernel umount
 +    ksu_handle_umount(old_uid, new_uid);
-+
-+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+    // We can reorder the mnt_id now after all sus mounts are umounted
-+    susfs_reorder_mnt_id();
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+
-+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+    susfs_run_sus_path_loop(new_uid);
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +
 +    susfs_set_current_proc_umounted();
 +
@@ -976,7 +984,7 @@ index b8d26982..cdac225d 100644
                                 void *__never_use_argv, void *__never_use_envp,
                                 int *__never_use_flags);
 diff --git a/kernel/supercalls.c b/kernel/supercalls.c
-index 6aef3495..f87ce63c 100644
+index 6aef3495..b163244f 100644
 --- a/kernel/supercalls.c
 +++ b/kernel/supercalls.c
 @@ -11,6 +11,10 @@
@@ -1113,13 +1121,13 @@ index 6aef3495..f87ce63c 100644
 +            susfs_set_i_state_on_external_dir(arg);
 +            return 0;
 +        }
-+#endif //#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +        if (cmd == CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS) {
 +            susfs_set_hide_sus_mnts_for_non_su_procs(arg);
 +            return 0;
 +        }
-+#endif //#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 +        if (cmd == CMD_SUSFS_ADD_SUS_KSTAT) {
 +            susfs_add_sus_kstat(arg);
@@ -1133,31 +1141,31 @@ index 6aef3495..f87ce63c 100644
 +            susfs_add_sus_kstat(arg);
 +            return 0;
 +        }
-+#endif //#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
 +        if (cmd == CMD_SUSFS_SET_UNAME) {
 +            susfs_set_uname(arg);
 +            return 0;
 +        }
-+#endif //#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
++#endif // #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
 +#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
 +        if (cmd == CMD_SUSFS_ENABLE_LOG) {
 +            susfs_enable_log(arg);
 +            return 0;
 +        }
-+#endif //#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
++#endif // #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
 +        if (cmd == CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG) {
 +            susfs_set_cmdline_or_bootconfig(arg);
 +            return 0;
 +        }
-+#endif //#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++#endif // #ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +        if (cmd == CMD_SUSFS_ADD_OPEN_REDIRECT) {
 +            susfs_add_open_redirect(arg);
 +            return 0;
 +        }
-+#endif //#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +        if (cmd == CMD_SUSFS_ADD_SUS_MAP) {
 +            susfs_add_sus_map(arg);

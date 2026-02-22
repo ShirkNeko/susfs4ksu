@@ -41,11 +41,11 @@
 #define TRY_UMOUNT_DEFAULT 0 /* used by susfs_try_umount() */
 #define TRY_UMOUNT_DETACH 1 /* used by susfs_try_umount() */
 
-#define DEFAULT_KSU_MNT_ID 500000 /* used by mount->mnt_id */
+#define DEFAULT_UNSHARE_KSU_MNT_ID 600000 /* used for mounts unshared by ksu process */
+#define DEFAULT_KSU_MNT_ID 500000 /* used for mounts created or single cloned by ksu process */
 #define DEFAULT_KSU_MNT_GROUP_ID 5000 /* used by mount->mnt_group_id */
 
 /*
- * mount->mnt.susfs_mnt_id_backup => storing original mount's mnt_id
  * inode->i_mapping->flags => A 'unsigned long' type storing flag 'AS_FLAGS_', bit 1 to 31 is not usable since 6.12
  * nd->state => storing flag 'ND_STATE_'
  * nd->flags => storing flag 'ND_FLAGS_'
@@ -72,6 +72,11 @@ static inline bool susfs_is_current_proc_umounted(void) {
 
 static inline void susfs_set_current_proc_umounted(void) {
 	set_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
+}
+
+static inline bool susfs_is_current_proc_umounted_app(void) {
+	return (test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED) &&
+			current_uid().val >= 10000);
 }
 
 #endif // #ifndef KSU_SUSFS_DEF_H

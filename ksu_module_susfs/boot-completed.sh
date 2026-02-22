@@ -5,6 +5,17 @@ MODDIR=/data/adb/modules/susfs4ksu
 
 SUSFS_BIN=/data/adb/ksu/bin/ksu_susfs
 
+#### Adding sus mounts to umount list via built-in KernelSU kernel umount (not via add_try_umount from old susfs) ####
+cat <<EOF >/dev/null
+## Don't forget to notify KernelSU that all ksu modules all mounted and ready ##
+/data/adb/ksu/bin/ksud kernel notify-module-mounted
+
+## This is just an example to add the sus mounts to kernel umount ##
+if [ ! -f "/data/adb/susfs_no_auto_add_kernel_umount" ]; then
+	cat /proc/1/mountinfo | grep -E "^5[0-9]{5,} .*$|KSU" | awk '{print $5}' | while read -r LINE; do /data/adb/ksu/bin/ksud kernel umount add --flags 2 "${LINE}" 2>/dev/null; done
+fi
+EOF
+
 #### Hide path like /sdcard/<target_root_dir> from all user app processes without root access ####
 cat <<EOF >/dev/null
 ## First we need to wait until files are accessible in /sdcard ##
