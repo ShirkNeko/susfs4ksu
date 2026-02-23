@@ -41,7 +41,7 @@
 #define TRY_UMOUNT_DEFAULT 0 /* used by susfs_try_umount() */
 #define TRY_UMOUNT_DETACH 1 /* used by susfs_try_umount() */
 
-#define DEFAULT_UNSHARE_KSU_MNT_ID 600000 /* used for mounts unshared by ksu process */
+#define DEFAULT_UNSHARE_KSU_MNT_ID 10000 /* used for mounts unshared by ksu process */
 #define DEFAULT_KSU_MNT_ID 500000 /* used for mounts created or single cloned by ksu process */
 #define DEFAULT_KSU_MNT_GROUP_ID 5000 /* used by mount->mnt_group_id */
 
