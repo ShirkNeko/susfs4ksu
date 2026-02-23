@@ -95,8 +95,8 @@ void susfs_add_sus_path(void __user **user_info) {
 
 	if (inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
 		fi = get_fuse_inode(inode);
-		if (!fi) {
-			SUSFS_LOGE("fi is NULL\n");
+		if (!fi || !fi->inode.i_mapping) {
+			SUSFS_LOGE("fi || fi->inode.i_mapping is NULL\n");
 			info.err = -ENOENT;
 			goto out_path_put_path;
 		}
@@ -171,13 +171,14 @@ void susfs_run_sus_path_loop(void) {
 		{
 			inode = d_backing_inode(path.dentry);
 			if (!inode || !inode->i_mapping) {
+				SUSFS_LOGE("inode || inode->i_mapping is NULL\n");
 				path_put(&path);
 				continue;
 			}
 			if (inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
 				fi = get_fuse_inode(inode);
-				if (!fi) {
-					SUSFS_LOGE("fi is NULL\n");
+				if (!fi || !fi->inode.i_mapping) {
+					SUSFS_LOGE("fi || fi->inode.i_mapping is NULL\n");
 					path_put(&path);
 					continue;
 				}
@@ -185,8 +186,8 @@ void susfs_run_sus_path_loop(void) {
 			} else {
 				set_bit(AS_FLAGS_SUS_PATH, &inode->i_mapping->flags);
 			}
-			path_put(&path);
 			SUSFS_LOGI("re-flag AS_FLAGS_SUS_PATH on path '%s'\n", cursor->target_pathname);
+			path_put(&path);
 		}
 	}
 }
@@ -196,84 +197,57 @@ static inline bool is_i_uid_not_allowed(uid_t i_uid) {
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
-bool susfs_is_inode_sus_path(struct mnt_idmap* idmap, struct inode *inode) {
+bool susfs_is_inode_sus_path(struct mnt_idmap* idmap, struct inode *inode)
+#else
+bool susfs_is_inode_sus_path(struct inode *inode)
+#endif
+{
 	struct fuse_inode *fi = NULL;
 	if (!susfs_is_current_proc_umounted_app()) {
 		return false;
 	}
+	if (!inode->i_mapping) {
+		SUSFS_LOGE("inode->i_mapping is NULL\n");
+		return false;
+	}
 	if (inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
 		fi = get_fuse_inode(inode);
-		if (!fi) {
+		if (!fi || !fi->inode.i_mapping) {
+			SUSFS_LOGE("fi || fi->inode.i_mapping is NULL\n");
 			return false;
 		}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
 		if (unlikely(test_bit(AS_FLAGS_SUS_PATH, &fi->inode.i_mapping->flags) &&
-			is_i_uid_not_allowed(i_uid_into_vfsuid(idmap, &fi->inode).val))) {
+			is_i_uid_not_allowed(i_uid_into_vfsuid(idmap, &fi->inode).val)))
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
+		if (unlikely(test_bit(AS_FLAGS_SUS_PATH, &fi->inode.i_mapping->flags) &&
+			is_i_uid_not_allowed(i_uid_into_mnt(i_user_ns(&fi->inode), &fi->inode).val)))
+#else
+		if (unlikely(test_bit(AS_FLAGS_SUS_PATH, &fi->inode.i_mapping->flags) &&
+			is_i_uid_not_allowed(fi->inode.i_uid.val)))
+#endif
+		{
 			SUSFS_LOGI("hiding path with ino '%lu'\n", inode->i_ino);
 			return true;
 		}
 		return false;
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
 	if (unlikely(test_bit(AS_FLAGS_SUS_PATH, &inode->i_mapping->flags) &&
 		is_i_uid_not_allowed(i_uid_into_vfsuid(idmap, inode).val)))
-	{
-		SUSFS_LOGI("hiding path with ino '%lu'\n", inode->i_ino);
-		return true;
-	}
-	return false;
-}
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
-bool susfs_is_inode_sus_path(struct inode *inode) {
-	struct fuse_inode *fi = NULL;
-	if (!susfs_is_current_proc_umounted_app()) {
-		return false;
-	}
-	if (inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
-		fi = get_fuse_inode(inode);
-		if (!fi) {
-			return false;
-		}
-		if (unlikely(test_bit(AS_FLAGS_SUS_PATH, &fi->inode.i_mapping->flags) &&
-			is_i_uid_not_allowed(i_uid_into_mnt(i_user_ns(&fi->inode), &fi->inode).val))) {
-			SUSFS_LOGI("hiding path with ino '%lu'\n", inode->i_ino);
-			return true;
-		}
-		return false;
-	}
 	if (unlikely(test_bit(AS_FLAGS_SUS_PATH, &inode->i_mapping->flags) &&
 		is_i_uid_not_allowed(i_uid_into_mnt(i_user_ns(inode), inode).val)))
-	{
-		SUSFS_LOGI("hiding path with ino '%lu'\n", inode->i_ino);
-		return true;
-	}
-	return false;
-}
 #else
-bool susfs_is_inode_sus_path(struct inode *inode) {
-	struct fuse_inode *fi = NULL;
-	if (!susfs_is_current_proc_umounted_app()) {
-		return false;
-	}
-	if (inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
-		fi = get_fuse_inode(inode);
-		if (!fi) {
-			return false;
-		}
-		if (unlikely(test_bit(AS_FLAGS_SUS_PATH, &fi->inode.i_mapping->flags) &&
-			is_i_uid_not_allowed(fi->inode.i_uid.val))) {
-			SUSFS_LOGI("hiding path with ino '%lu'\n", inode->i_ino);
-			return true;
-		}
-		return false;
-	}
 	if (unlikely(test_bit(AS_FLAGS_SUS_PATH, &inode->i_mapping->flags) &&
 		is_i_uid_not_allowed(inode->i_uid.val)))
+#endif
 	{
 		SUSFS_LOGI("hiding path with ino '%lu'\n", inode->i_ino);
 		return true;
 	}
 	return false;
 }
-#endif
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
 /* sus_mount */
