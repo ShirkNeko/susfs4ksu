@@ -54,7 +54,7 @@ struct st_susfs_hide_sus_mnts_for_non_su_procs {
 	bool                                    enabled;
 	int                                     err;
 };
-#endif
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 
 /* sus_kstat */
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
