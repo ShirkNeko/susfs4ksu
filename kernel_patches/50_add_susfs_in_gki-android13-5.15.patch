@@ -450,7 +450,7 @@ index ce97b60fe..b3f15b67f 100644
  	return filp;
  }
 diff --git a/fs/namespace.c b/fs/namespace.c
-index ff5e6455c..075515e6a 100644
+index ff5e6455c..e3cb514f4 100644
 --- a/fs/namespace.c
 +++ b/fs/namespace.c
 @@ -32,10 +32,21 @@
@@ -635,7 +635,7 @@ index ff5e6455c..075515e6a 100644
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +	// - We will just stop checking for ksu process if /sdcard/Android is accessible,
 +	//   for the sake of performance
-+	if (!susfs_is_sdcard_android_data_decrypted && susfs_is_current_ksu_domain()) {
++	if (!READ_ONCE(susfs_is_sdcard_android_data_decrypted) && susfs_is_current_ksu_domain()) {
 +		mnt = susfs_alloc_non_unshare_ksu_vfsmnt(fc->source ?: "none");
 +		goto bypass_orig_flow;
 +	}
@@ -655,7 +655,7 @@ index ff5e6455c..075515e6a 100644
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +	// - We will just stop checking for ksu process if /sdcard/Android is accessible,
 +	//   for the sake of performance
-+	if (susfs_is_sdcard_android_data_decrypted) {
++	if (READ_ONCE(susfs_is_sdcard_android_data_decrypted)) {
 +		goto skip_checking_for_ksu_proc;
 +	}
 +
@@ -1172,7 +1172,7 @@ index 3823dfae5..fda9f43cc 100644
  		start_vaddr = end;
  
 diff --git a/fs/proc_namespace.c b/fs/proc_namespace.c
-index 49650e54d..8ebb43179 100644
+index 49650e54d..403d9353c 100644
 --- a/fs/proc_namespace.c
 +++ b/fs/proc_namespace.c
 @@ -12,12 +12,20 @@
@@ -1201,7 +1201,7 @@ index 49650e54d..8ebb43179 100644
  	int err;
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+	if (susfs_hide_sus_mnts_for_non_su_procs &&
++	if (READ_ONCE(susfs_hide_sus_mnts_for_non_su_procs) &&
 +		r->mnt_id >= DEFAULT_KSU_MNT_ID &&
 +		!susfs_is_current_ksu_domain())
 +	{
@@ -1217,7 +1217,7 @@ index 49650e54d..8ebb43179 100644
  	int err;
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+	if (susfs_hide_sus_mnts_for_non_su_procs &&
++	if (READ_ONCE(susfs_hide_sus_mnts_for_non_su_procs) &&
 +		r->mnt_id >= DEFAULT_KSU_MNT_ID &&
 +		!susfs_is_current_ksu_domain())
 +	{
@@ -1233,7 +1233,7 @@ index 49650e54d..8ebb43179 100644
  	int err;
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+	if (susfs_hide_sus_mnts_for_non_su_procs &&
++	if (READ_ONCE(susfs_hide_sus_mnts_for_non_su_procs) &&
 +		r->mnt_id >= DEFAULT_KSU_MNT_ID &&
 +		!susfs_is_current_ksu_domain())
 +	{
@@ -1797,7 +1797,7 @@ index 0e7609307..463728f51 100644
  	if (copy_to_user(name, &tmp, sizeof(tmp)))
  		return -EFAULT;
 diff --git a/security/selinux/avc.c b/security/selinux/avc.c
-index 2ee2c8a31..35e45b968 100644
+index 2ee2c8a31..273c82ec7 100644
 --- a/security/selinux/avc.c
 +++ b/security/selinux/avc.c
 @@ -47,6 +47,12 @@
@@ -1818,7 +1818,7 @@ index 2ee2c8a31..35e45b968 100644
  	rc = security_sid_to_context(sad->state, sad->tsid, &tcontext,
  				     &tcontext_len);
 +#ifdef CONFIG_KSU_SUSFS
-+	if (unlikely(sad->tsid == susfs_ksu_sid && susfs_is_avc_log_spoofing_enabled)) {
++	if (unlikely(sad->tsid == susfs_ksu_sid && READ_ONCE(susfs_is_avc_log_spoofing_enabled))) {
 +		if (rc)
 +			audit_log_format(ab, " tsid=%d", susfs_priv_app_sid);
 +		else
