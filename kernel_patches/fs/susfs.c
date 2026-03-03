@@ -264,7 +264,7 @@ void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info) {
 		info.err = -EFAULT;
 		goto out_copy_to_user;
 	}
-
+	
 	WRITE_ONCE(susfs_hide_sus_mnts_for_non_su_procs, info.enabled);
 	SUSFS_LOGI("susfs_hide_sus_mnts_for_non_su_procs: %d\n", info.enabled);
 	info.err = 0;
