@@ -193,33 +193,10 @@ index f544dd8d..e592bb45 100644
      setup_mount_ns(profile.namespaces);
  }
 diff --git a/kernel/kernel_umount.c b/kernel/kernel_umount.c
-index e1d67bd9..a271c786 100644
+index e1d67bd9..ba06b66d 100644
 --- a/kernel/kernel_umount.c
 +++ b/kernel/kernel_umount.c
-@@ -72,6 +72,10 @@ struct umount_tw {
-     struct callback_head cb;
- };
- 
-+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+extern void susfs_run_sus_path_loop(void);
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+
- static void umount_tw_func(struct callback_head *cb)
- {
-     struct umount_tw *tw = container_of(cb, struct umount_tw, cb);
-@@ -86,6 +90,11 @@ static void umount_tw_func(struct callback_head *cb)
-     }
-     up_read(&mount_list_lock);
- 
-+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+    // susfs_run_sus_path_loop() runs here with ksu_cred so that it can reach all the paths
-+    susfs_run_sus_path_loop();
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+
-     revert_creds(saved);
- 
-     kfree(tw);
-@@ -108,6 +117,7 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+@@ -108,6 +108,7 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
          return 0;
      }
  
@@ -227,7 +204,7 @@ index e1d67bd9..a271c786 100644
      // There are 5 scenarios:
      // 1. Normal app: zygote -> appuid
      // 2. Isolated process forked from zygote: zygote -> isolated_process
-@@ -131,6 +141,8 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+@@ -131,6 +132,8 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
          pr_info("handle umount ignore non zygote child: %d\n", current->pid);
          return 0;
      }
@@ -647,7 +624,7 @@ index a4ab96e8..7bec5ed4 100644
 +
  #endif
 diff --git a/kernel/setuid_hook.c b/kernel/setuid_hook.c
-index 849947c1..a7aff098 100644
+index 849947c1..bba604a4 100644
 --- a/kernel/setuid_hook.c
 +++ b/kernel/setuid_hook.c
 @@ -11,6 +11,9 @@
@@ -660,7 +637,7 @@ index 849947c1..a7aff098 100644
  
  #include "allowlist.h"
  #include "setuid_hook.h"
-@@ -19,15 +22,34 @@
+@@ -19,15 +22,74 @@
  #include "selinux/selinux.h"
  #include "seccomp_cache.h"
  #include "supercalls.h"
@@ -683,6 +660,46 @@ index 849947c1..a7aff098 100644
 +}
 +
 +extern u32 susfs_zygote_sid;
++extern struct cred *ksu_cred;
++
++#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++extern void susfs_run_sus_path_loop(void);
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
++
++struct susfs_handle_setuid_tw {
++    struct callback_head cb;
++};
++
++static void susfs_handle_setuid_tw_func(struct callback_head *cb)
++{
++    struct susfs_handle_setuid_tw *tw = container_of(cb, struct susfs_handle_setuid_tw, cb);
++    const struct cred *saved = override_creds(ksu_cred);
++
++#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++    susfs_run_sus_path_loop();
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
++
++    revert_creds(saved);
++    kfree(tw);
++}
++
++static void ksu_handle_extra_susfs_work(void)
++{
++    struct susfs_handle_setuid_tw *tw = kzalloc(sizeof(*tw), GFP_ATOMIC);
++
++    if (!tw) {
++        pr_err("susfs: No enough memory\n");
++        return;
++    }
++
++    tw->cb.func = susfs_handle_setuid_tw_func;
++
++    int err = task_work_add(current, &tw->cb, TWA_RESUME);
++    if (err) {
++        kfree(tw);
++        pr_err("susfs: Failed adding task_work 'susfs_handle_setuid_tw', err: %d\n", err);
++    }
++}
 +#endif // #ifdef CONFIG_KSU_SUSFS
 +
  static void ksu_install_manager_fd_tw_func(struct callback_head *cb)
@@ -695,7 +712,7 @@ index 849947c1..a7aff098 100644
  int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
  {
      // we rely on the fact that zygote always call setresuid(3) with same uids
-@@ -72,6 +94,70 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+@@ -72,6 +134,72 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
  
      return 0;
  }
@@ -757,6 +774,8 @@ index 849947c1..a7aff098 100644
 +do_umount:
 +    // Handle kernel umount
 +    ksu_handle_umount(old_uid, new_uid);
++
++    ksu_handle_extra_susfs_work();
 +
 +    susfs_set_current_proc_umounted();
 +
