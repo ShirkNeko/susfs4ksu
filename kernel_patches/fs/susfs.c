@@ -44,31 +44,13 @@ bool susfs_starts_with(const char *str, const char *prefix) {
 
 /* sus_path */
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
+DEFINE_STATIC_SRCU(susfs_srcu_sus_path_loop);
 static DEFINE_SPINLOCK(susfs_spin_lock_sus_path);
 static LIST_HEAD(LH_SUS_PATH_LOOP);
 #ifndef FUSE_SUPER_MAGIC
 #define FUSE_SUPER_MAGIC 0x65735546
 #endif
 const struct qstr susfs_fake_qstr_name = QSTR_INIT("..5.u.S", 7); // used to re-test the dcache lookup, make sure you don't have file named like this!!
-
-void susfs_set_i_state_on_external_dir(void __user **user_info) {
-	static struct st_external_dir info = {0};
-
-	if (copy_from_user(&info, (struct st_external_dir __user*)*user_info, sizeof(info))) {
-		info.err = -EFAULT;
-		goto out_copy_to_user;
-	}
-	info.err = 0;
-out_copy_to_user:
-	if (copy_to_user(&((struct st_external_dir __user*)*user_info)->err, &info.err, sizeof(info.err))) {
-		info.err = -EFAULT;
-	}
-	if (info.cmd == CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH) {
-		SUSFS_LOGI("CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH deprecated, will be removed soon, ret: %d\n", info.err);
-	} else if (info.cmd == CMD_SUSFS_SET_SDCARD_ROOT_PATH) {
-		SUSFS_LOGI("CMD_SUSFS_SET_SDCARD_ROOT_PATH, deprecated, will be removed soon, ret: %d\n", info.err);
-	}
-}
 
 void susfs_add_sus_path(void __user **user_info) {
 	struct st_susfs_sus_path info = {0};
@@ -148,7 +130,7 @@ void susfs_add_sus_path_loop(void __user **user_info) {
 	new_list->path_len = strlen(new_list->info.target_pathname);
 	INIT_LIST_HEAD(&new_list->list);
 	spin_lock(&susfs_spin_lock_sus_path);
-	list_add_tail(&new_list->list, &LH_SUS_PATH_LOOP);
+	list_add_tail_rcu(&new_list->list, &LH_SUS_PATH_LOOP);
 	spin_unlock(&susfs_spin_lock_sus_path);
 	SUSFS_LOGI("target_ino: '%lu', target_pathname: '%s', i_uid: '%u', is successfully added to LH_SUS_PATH_LOOP\n",
 				new_list->info.target_ino, new_list->target_pathname, new_list->info.i_uid);
@@ -165,10 +147,10 @@ void susfs_run_sus_path_loop(void) {
 	struct path path;
 	struct inode *inode;
 	struct fuse_inode *fi = NULL;
+	int srcu_idx = srcu_read_lock(&susfs_srcu_sus_path_loop);
 
-	list_for_each_entry(cursor, &LH_SUS_PATH_LOOP, list) {
-		if (*cursor->target_pathname != '\0' &&
-			!kern_path(cursor->target_pathname, 0, &path))
+	list_for_each_entry_rcu(cursor, &LH_SUS_PATH_LOOP, list) {
+		if (!kern_path(cursor->target_pathname, 0, &path))
 		{
 			inode = d_backing_inode(path.dentry);
 			if (!inode || !inode->i_mapping) {
@@ -191,6 +173,7 @@ void susfs_run_sus_path_loop(void) {
 			path_put(&path);
 		}
 	}
+	srcu_read_unlock(&susfs_srcu_sus_path_loop, srcu_idx);
 }
 
 static inline bool is_i_uid_not_allowed(uid_t i_uid) {
