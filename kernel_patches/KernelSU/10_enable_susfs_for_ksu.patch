@@ -977,7 +977,7 @@ index b8d26982..cdac225d 100644
                                 void *__never_use_argv, void *__never_use_envp,
                                 int *__never_use_flags);
 diff --git a/kernel/supercalls.c b/kernel/supercalls.c
-index 0cce457a..ce7dc10d 100644
+index 0cce457a..6b38b53c 100644
 --- a/kernel/supercalls.c
 +++ b/kernel/supercalls.c
 @@ -11,6 +11,10 @@
@@ -1094,7 +1094,7 @@ index 0cce457a..ce7dc10d 100644
  static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
  {
      struct pt_regs *real_regs = PT_REAL_REGS(regs);
-@@ -753,6 +792,123 @@ static struct kprobe reboot_kp = {
+@@ -753,6 +792,115 @@ static struct kprobe reboot_kp = {
      .symbol_name = REBOOT_SYMBOL,
      .pre_handler = reboot_handler_pre,
  };
@@ -1114,14 +1114,6 @@ index 0cce457a..ce7dc10d 100644
 +        }
 +        if (cmd == CMD_SUSFS_ADD_SUS_PATH_LOOP) {
 +            susfs_add_sus_path_loop(arg);
-+            return 0;
-+        }
-+        if (cmd == CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH) {
-+            susfs_set_i_state_on_external_dir(arg);
-+            return 0;
-+        }
-+        if (cmd == CMD_SUSFS_SET_SDCARD_ROOT_PATH) {
-+            susfs_set_i_state_on_external_dir(arg);
 +            return 0;
 +        }
 +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
@@ -1218,7 +1210,7 @@ index 0cce457a..ce7dc10d 100644
  
  void ksu_supercalls_init(void)
  {
-@@ -764,17 +920,23 @@ void ksu_supercalls_init(void)
+@@ -764,17 +912,23 @@ void ksu_supercalls_init(void)
                  ksu_ioctl_handlers[i].cmd);
      }
  
