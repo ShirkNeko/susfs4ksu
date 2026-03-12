@@ -479,7 +479,7 @@ index 40e10b159..2ec0d2425 100644
  	return filp;
  }
 diff --git a/fs/namespace.c b/fs/namespace.c
-index 7981f78ea..a5bb8b96c 100644
+index 7981f78ea..1f48eaccb 100644
 --- a/fs/namespace.c
 +++ b/fs/namespace.c
 @@ -30,10 +30,24 @@
@@ -778,7 +778,7 @@ index 7981f78ea..a5bb8b96c 100644
  };
 +
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+/* - To retrieve the non sus mount id from mount */
++/* - To retrieve the non sus mnt_id from mount */
 +int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt) {
 +	struct mount *mnt = orig_mnt;
 +	int mnt_id;
@@ -1641,7 +1641,7 @@ index 09e8ed7d4..419947280 100644
  	if (error >= 0)
  		error = buf.error;
 diff --git a/fs/stat.c b/fs/stat.c
-index c6a2e1098..22e86b9ec 100644
+index c6a2e1098..c24c557e7 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
 @@ -17,6 +17,10 @@
@@ -1655,19 +1655,21 @@ index c6a2e1098..22e86b9ec 100644
  
  #include <linux/uaccess.h>
  #include <asm/unistd.h>
-@@ -24,6 +28,11 @@
+@@ -24,6 +28,13 @@
  #include "internal.h"
  #include "mount.h"
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 +extern void susfs_generic_fillattr_spoofer(struct inode *inode, struct kstat *stat);
++#endif
++#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +extern int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt);
 +#endif
 +
  /**
   * generic_fillattr - Fill in the basic attributes from the inode struct
   * @inode: Inode to use as the source
-@@ -48,6 +57,9 @@ void generic_fillattr(struct inode *inode, struct kstat *stat)
+@@ -48,6 +59,9 @@ void generic_fillattr(struct inode *inode, struct kstat *stat)
  	stat->ctime = inode->i_ctime;
  	stat->blksize = i_blocksize(inode);
  	stat->blocks = inode->i_blocks;
@@ -1677,7 +1679,7 @@ index c6a2e1098..22e86b9ec 100644
  }
  EXPORT_SYMBOL_NS(generic_fillattr, ANDROID_GKI_VFS_EXPORT_ONLY);
  
-@@ -92,8 +104,18 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
+@@ -92,8 +106,18 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
  				  STATX_ATTR_DAX);
  
  	if (inode->i_op->getattr)
@@ -1696,7 +1698,7 @@ index c6a2e1098..22e86b9ec 100644
  
  	generic_fillattr(inode, stat);
  	return 0;
-@@ -143,6 +165,13 @@ EXPORT_SYMBOL(vfs_getattr);
+@@ -143,6 +167,13 @@ EXPORT_SYMBOL(vfs_getattr);
   *
   * 0 will be returned on success, and a -ve error code if unsuccessful.
   */
@@ -1710,7 +1712,7 @@ index c6a2e1098..22e86b9ec 100644
  int vfs_fstat(int fd, struct kstat *stat)
  {
  	struct fd f;
-@@ -152,10 +181,25 @@ int vfs_fstat(int fd, struct kstat *stat)
+@@ -152,10 +183,25 @@ int vfs_fstat(int fd, struct kstat *stat)
  	if (!f.file)
  		return -EBADF;
  	error = vfs_getattr(&f.file->f_path, stat, STATX_BASIC_STATS, 0);
@@ -1736,7 +1738,7 @@ index c6a2e1098..22e86b9ec 100644
  /**
   * vfs_statx - Get basic and extra attributes by filename
   * @dfd: A file descriptor representing the base dir for a relative filename
-@@ -178,6 +222,18 @@ static int vfs_statx(int dfd, const char __user *filename, int flags,
+@@ -178,6 +224,18 @@ static int vfs_statx(int dfd, const char __user *filename, int flags,
  	unsigned lookup_flags = 0;
  	int error;
  
@@ -1755,7 +1757,7 @@ index c6a2e1098..22e86b9ec 100644
  	if (flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT | AT_EMPTY_PATH |
  		      AT_STATX_SYNC_TYPE))
  		return -EINVAL;
-@@ -195,7 +251,15 @@ static int vfs_statx(int dfd, const char __user *filename, int flags,
+@@ -195,7 +253,15 @@ static int vfs_statx(int dfd, const char __user *filename, int flags,
  		goto out;
  
  	error = vfs_getattr(&path, stat, request_mask, flags);
