@@ -1123,7 +1123,7 @@ index 913bef0d2..3c571f21a 100644
  	/* show_fd_locks() never deferences files so a stale value is safe */
  	show_fd_locks(m, file, files);
 diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
-index 3823dfae5..fda9f43cc 100644
+index 3823dfae5..2f7bff5f5 100644
 --- a/fs/proc/task_mmu.c
 +++ b/fs/proc/task_mmu.c
 @@ -21,6 +21,9 @@
@@ -1141,13 +1141,13 @@ index 3823dfae5..fda9f43cc 100644
  }
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+extern void susfs_sus_ino_for_show_map_vma(unsigned long ino, dev_t *out_dev, unsigned long *out_ino);
++extern void susfs_show_map_vma_spoofer(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);
 +#endif
 +
  static void
  show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
  {
-@@ -283,8 +290,41 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
+@@ -283,8 +290,32 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
  
  	if (file) {
  		struct inode *inode = file_inode(vma->vm_file);
@@ -1172,24 +1172,15 @@ index 3823dfae5..fda9f43cc 100644
 +			goto done;
 +		}
 +#endif
-+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+		if (inode->i_mapping &&
-+			unlikely(test_bit(AS_FLAGS_SUS_KSTAT, &inode->i_mapping->flags) &&
-+			susfs_is_current_proc_umounted_app()))
-+		{
-+			susfs_sus_ino_for_show_map_vma(inode->i_ino, &dev, &ino);
-+			goto bypass_orig_flow;
-+		}
-+#endif
  		dev = inode->i_sb->s_dev;
  		ino = inode->i_ino;
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+bypass_orig_flow:
++		susfs_show_map_vma_spoofer(inode, &dev, &ino);
 +#endif
  		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
  	}
  
-@@ -862,6 +902,29 @@ static int show_smap(struct seq_file *m, void *v)
+@@ -862,6 +893,29 @@ static int show_smap(struct seq_file *m, void *v)
  	if (!vma_pages(vma))
  		goto show_pad;
  
@@ -1219,7 +1210,7 @@ index 3823dfae5..fda9f43cc 100644
  	smap_gather_stats(vma, &mss, 0);
  
  	show_map_vma(m, vma);
-@@ -914,7 +977,23 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
+@@ -914,7 +968,23 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
  	hold_task_mempolicy(priv);
  
  	for (vma = priv->mm->mmap; vma;) {
@@ -1243,7 +1234,7 @@ index 3823dfae5..fda9f43cc 100644
  		last_vma_end = vma->vm_end;
  
  		/*
-@@ -1642,6 +1721,9 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
+@@ -1642,6 +1712,9 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
  	unsigned long start_vaddr;
  	unsigned long end_vaddr;
  	int ret = 0, copied = 0;
@@ -1253,7 +1244,7 @@ index 3823dfae5..fda9f43cc 100644
  
  	if (!mm || !mmget_not_zero(mm))
  		goto out;
-@@ -1697,6 +1779,18 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
+@@ -1697,6 +1770,18 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
  		if (ret)
  			goto out_free;
  		ret = walk_page_range(mm, start_vaddr, end, &pagemap_ops, &pm);
@@ -1629,7 +1620,7 @@ index 09e8ed7d4..419947280 100644
  	if (error >= 0)
  		error = buf.error;
 diff --git a/fs/stat.c b/fs/stat.c
-index 357a1db41..621c2f13b 100644
+index 357a1db41..cf9b41bbc 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
 @@ -18,12 +18,20 @@
@@ -1647,32 +1638,41 @@ index 357a1db41..621c2f13b 100644
  #include "mount.h"
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+extern void susfs_sus_ino_for_generic_fillattr(unsigned long ino, struct kstat *stat);
++extern void susfs_generic_fillattr_spoofer(struct inode *inode, struct kstat *stat);
 +#endif
 +
  /**
   * generic_fillattr - Fill in the basic attributes from the inode struct
   * @mnt_userns:	user namespace of the mount the inode was found from
-@@ -43,6 +51,19 @@
- void generic_fillattr(struct user_namespace *mnt_userns, struct inode *inode,
- 		      struct kstat *stat)
- {
+@@ -56,6 +64,9 @@ void generic_fillattr(struct user_namespace *mnt_userns, struct inode *inode,
+ 	stat->ctime = inode->i_ctime;
+ 	stat->blksize = i_blocksize(inode);
+ 	stat->blocks = inode->i_blocks;
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+	if (inode->i_mapping &&
-+		unlikely(test_bit(AS_FLAGS_SUS_KSTAT, &inode->i_mapping->flags)) &&
-+		likely(susfs_is_current_proc_umounted_app()))
-+	{
-+		susfs_sus_ino_for_generic_fillattr(inode->i_ino, stat);
-+		stat->mode = inode->i_mode;
-+		stat->rdev = inode->i_rdev;
-+		stat->uid = i_uid_into_mnt(mnt_userns, inode);
-+		stat->gid = i_gid_into_mnt(mnt_userns, inode);
-+		return;
-+	}
++	susfs_generic_fillattr_spoofer(inode, stat);
 +#endif
- 	stat->dev = inode->i_sb->s_dev;
- 	stat->ino = inode->i_ino;
- 	stat->mode = inode->i_mode;
+ }
+ EXPORT_SYMBOL_NS(generic_fillattr, ANDROID_GKI_VFS_EXPORT_ONLY);
+ 
+@@ -120,8 +131,18 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
+ 
+ 	mnt_userns = mnt_user_ns(path->mnt);
+ 	if (inode->i_op->getattr)
++#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++	{
++		int err = inode->i_op->getattr(mnt_userns, path, stat,
++					    request_mask, query_flags);
++		if (!err)
++			susfs_generic_fillattr_spoofer(inode, stat);
++		return err;
++	}
++#else
+ 		return inode->i_op->getattr(mnt_userns, path, stat,
+ 					    request_mask, query_flags);
++#endif
+ 
+ 	generic_fillattr(mnt_userns, inode, stat);
+ 	return 0;
 @@ -171,6 +192,13 @@ EXPORT_SYMBOL_NS(vfs_getattr, ANDROID_GKI_VFS_EXPORT_ONLY);
   *
   * 0 will be returned on success, and a -ve error code if unsuccessful.
