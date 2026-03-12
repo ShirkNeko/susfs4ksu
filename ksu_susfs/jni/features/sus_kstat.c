@@ -14,35 +14,53 @@
 #define CMD_SUSFS_UPDATE_SUS_KSTAT 0x55571
 #define CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY 0x55572
 
+#define KSTAT_SPOOF_INO (1 << 0)
+#define KSTAT_SPOOF_DEV (1 << 1)
+#define KSTAT_SPOOF_NLINK (1 << 2)
+#define KSTAT_SPOOF_SIZE (1 << 3)
+#define KSTAT_SPOOF_ATIME_TV_SEC (1 << 4)
+#define KSTAT_SPOOF_ATIME_TV_NSEC (1 << 5)
+#define KSTAT_SPOOF_MTIME_TV_SEC (1 << 6)
+#define KSTAT_SPOOF_MTIME_TV_NSEC (1 << 7)
+#define KSTAT_SPOOF_CTIME_TV_SEC (1 < 8)
+#define KSTAT_SPOOF_CTIME_TV_NSEC (1 << 9)
+#define KSTAT_SPOOF_BLOCKS (1 << 10)
+#define KSTAT_SPOOF_BLKSIZE (1 << 11)
+#define KSTAT_AUTO_SPOOF (KSTAT_SPOOF_INO | KSTAT_SPOOF_DEV | KSTAT_SPOOF_ATIME_TV_SEC | KSTAT_SPOOF_ATIME_TV_NSEC | \
+		    KSTAT_SPOOF_MTIME_TV_SEC | KSTAT_SPOOF_MTIME_TV_NSEC | KSTAT_SPOOF_CTIME_TV_SEC | KSTAT_SPOOF_CTIME_TV_NSEC | \
+		    KSTAT_SPOOF_BLKSIZE | KSTAT_SPOOF_BLOCKS)
+#define KSTAT_AUTO_SPOOF_FULL_CLONE (KSTAT_AUTO_SPOOF | KSTAT_SPOOF_NLINK | KSTAT_SPOOF_SIZE)
+
 struct st_susfs_sus_kstat {
 	bool                    is_statically;
-	unsigned long           target_ino; // the ino after bind mounted or overlayed
+	unsigned long           target_ino;
 	char                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
 	unsigned long           spoofed_ino;
 	unsigned long           spoofed_dev;
 	unsigned int            spoofed_nlink;
 	long long               spoofed_size;
 	long                    spoofed_atime_tv_sec;
+	unsigned long           spoofed_atime_tv_nsec;
 	long                    spoofed_mtime_tv_sec;
+	unsigned long           spoofed_mtime_tv_nsec;
 	long                    spoofed_ctime_tv_sec;
-	long                    spoofed_atime_tv_nsec;
-	long                    spoofed_mtime_tv_nsec;
-	long                    spoofed_ctime_tv_nsec;
-	unsigned long           spoofed_blksize;
-	unsigned long long      spoofed_blocks;
+	unsigned long           spoofed_ctime_tv_nsec;
+	long long               spoofed_blocks;
+	long                    spoofed_blksize;
+	int                     flags;
 	int                     err;
 };
 
-static void copy_stat_to_sus_kstat(struct st_susfs_sus_kstat* info, struct stat* sb) {
+static void copy_from_stat_to_sus_kstat(struct st_susfs_sus_kstat* info, struct stat* sb) {
 	info->spoofed_ino = sb->st_ino;
 	info->spoofed_dev = sb->st_dev;
 	info->spoofed_nlink = sb->st_nlink;
 	info->spoofed_size = sb->st_size;
 	info->spoofed_atime_tv_sec = sb->st_atime;
-	info->spoofed_mtime_tv_sec = sb->st_mtime;
-	info->spoofed_ctime_tv_sec = sb->st_ctime;
 	info->spoofed_atime_tv_nsec = sb->st_atime_nsec;
+	info->spoofed_mtime_tv_sec = sb->st_mtime;
 	info->spoofed_mtime_tv_nsec = sb->st_mtime_nsec;
+	info->spoofed_ctime_tv_sec = sb->st_ctime;
 	info->spoofed_ctime_tv_nsec = sb->st_ctime_nsec;
 	info->spoofed_blksize = sb->st_blksize;
 	info->spoofed_blocks = sb->st_blocks;
@@ -99,14 +117,16 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 		print_help();
 		return -EINVAL;
 	}
-
+	/* get the stat of the target path first */
 	info.err = get_file_stat(argv[2], &sb);
 	if (info.err) {
 		log("[-] failed to get stat from path: '%s'\n", argv[2]);
 		return info.err;
 	}
-
+	/* it is statically */
 	info.is_statically = true;
+	info.target_ino = sb.st_ino;
+
 	/* ino */
 	if (strcmp(argv[3], "default")) {
 		ino = strtoul(argv[3], &endptr, 10);
@@ -114,10 +134,8 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 			print_help();
 			return -EINVAL;
 		}
-		info.target_ino = sb.st_ino;
 		sb.st_ino = ino;
-	} else {
-		info.target_ino = sb.st_ino;
+		info.flags |= KSTAT_SPOOF_INO;
 	}
 	/* dev */
 	if (strcmp(argv[4], "default")) {
@@ -127,6 +145,7 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 			return -EINVAL;
 		}
 		sb.st_dev = dev;
+		info.flags |= KSTAT_SPOOF_DEV;
 	}
 	/* nlink */
 	if (strcmp(argv[5], "default")) {
@@ -136,6 +155,7 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 			return -EINVAL;
 		}
 		sb.st_nlink = nlink;
+		info.flags |= KSTAT_SPOOF_NLINK;
 	}
 	/* size */
 	if (strcmp(argv[6], "default")) {
@@ -145,6 +165,7 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 			return -EINVAL;
 		}
 		sb.st_size = size;
+		info.flags |= KSTAT_SPOOF_SIZE;
 	}
 	/* atime */
 	if (strcmp(argv[7], "default")) {
@@ -154,6 +175,7 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 			return -EINVAL;
 		}
 		sb.st_atime = atime;
+		info.flags |= KSTAT_SPOOF_ATIME_TV_SEC;
 	}
 	/* atime_nsec */
 	if (strcmp(argv[8], "default")) {
@@ -163,6 +185,7 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 			return -EINVAL;
 		}
 		sb.st_atimensec = atime_nsec;
+		info.flags |= KSTAT_SPOOF_ATIME_TV_NSEC;
 	}
 	/* mtime */
 	if (strcmp(argv[9], "default")) {
@@ -172,6 +195,7 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 			return -EINVAL;
 		}
 		sb.st_mtime = mtime;
+		info.flags |= KSTAT_SPOOF_MTIME_TV_SEC;
 	}
 	/* mtime_nsec */
 	if (strcmp(argv[10], "default")) {
@@ -181,6 +205,7 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 			return -EINVAL;
 		}
 		sb.st_mtimensec = mtime_nsec;
+		info.flags |= KSTAT_SPOOF_MTIME_TV_NSEC;
 	}
 	/* ctime */
 	if (strcmp(argv[11], "default")) {
@@ -190,6 +215,7 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 			return -EINVAL;
 		}
 		sb.st_ctime = ctime;
+		info.flags |= KSTAT_SPOOF_CTIME_TV_SEC;
 	}
 	/* ctime_nsec */
 	if (strcmp(argv[12], "default")) {
@@ -199,6 +225,7 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 			return -EINVAL;
 		}
 		sb.st_ctimensec = ctime_nsec;
+		info.flags |= KSTAT_SPOOF_CTIME_TV_NSEC;
 	}
 	/* blocks */
 	if (strcmp(argv[13], "default")) {
@@ -208,6 +235,7 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 			return -EINVAL;
 		}
 		sb.st_blocks = blocks;
+		info.flags |= KSTAT_SPOOF_BLOCKS;
 	}
 	/* blksize */
 	if (strcmp(argv[14], "default")) {
@@ -217,9 +245,11 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 			return -EINVAL;
 		}
 		sb.st_blksize = blksize;
+		info.flags |= KSTAT_SPOOF_BLKSIZE;
 	}
+
 	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
-	copy_stat_to_sus_kstat(&info, &sb);
+	copy_from_stat_to_sus_kstat(&info, &sb);
 	info.err = ERR_CMD_NOT_SUPPORTED;
 	syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY, &info);
 	PRT_MSG_IF_CMD_NOT_SUPPORTED(info.err, CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY);
@@ -243,7 +273,8 @@ int add_sus_kstat(int argc, char *argv[]) {
 	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
 	info.is_statically = false;
 	info.target_ino = sb.st_ino;
-	copy_stat_to_sus_kstat(&info, &sb);
+	info.flags |= KSTAT_AUTO_SPOOF;
+	copy_from_stat_to_sus_kstat(&info, &sb);
 	info.err = ERR_CMD_NOT_SUPPORTED;
 	syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_ADD_SUS_KSTAT, &info);
 	PRT_MSG_IF_CMD_NOT_SUPPORTED(info.err, CMD_SUSFS_ADD_SUS_KSTAT);
@@ -267,8 +298,8 @@ int update_sus_kstat(int argc, char *argv[]) {
 	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
 	info.is_statically = false;
 	info.target_ino = sb.st_ino;
-	info.spoofed_size = sb.st_size; // use the current size, not the spoofed one
-	info.spoofed_blocks = sb.st_blocks; // use the current blocks, not the spoofed one
+	info.flags |= KSTAT_AUTO_SPOOF;
+	copy_from_stat_to_sus_kstat(&info, &sb);
 	info.err = ERR_CMD_NOT_SUPPORTED;
 	syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_UPDATE_SUS_KSTAT, &info);
 	PRT_MSG_IF_CMD_NOT_SUPPORTED(info.err, CMD_SUSFS_UPDATE_SUS_KSTAT);
@@ -292,6 +323,8 @@ int update_sus_kstat_full_clone(int argc, char *argv[]) {
 	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
 	info.is_statically = false;
 	info.target_ino = sb.st_ino;
+	info.flags |= KSTAT_AUTO_SPOOF_FULL_CLONE;
+	copy_from_stat_to_sus_kstat(&info, &sb);
 	info.err = ERR_CMD_NOT_SUPPORTED;
 	syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_UPDATE_SUS_KSTAT, &info);
 	PRT_MSG_IF_CMD_NOT_SUPPORTED(info.err, CMD_SUSFS_UPDATE_SUS_KSTAT);
