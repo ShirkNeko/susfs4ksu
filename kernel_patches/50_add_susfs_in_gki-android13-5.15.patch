@@ -458,7 +458,7 @@ index ce97b60fe..056022aa0 100644
  	return filp;
  }
 diff --git a/fs/namespace.c b/fs/namespace.c
-index ff5e6455c..ca45275e6 100644
+index ff5e6455c..629098761 100644
 --- a/fs/namespace.c
 +++ b/fs/namespace.c
 @@ -32,10 +32,24 @@
@@ -753,20 +753,22 @@ index ff5e6455c..ca45275e6 100644
  	new = copy_tree(old, old->mnt.mnt_root, copy_flags);
  	if (IS_ERR(new)) {
  		namespace_unlock();
-@@ -4669,3 +4890,32 @@ const struct proc_ns_operations mntns_operations = {
+@@ -4669,3 +4890,34 @@ const struct proc_ns_operations mntns_operations = {
  	.install	= mntns_install,
  	.owner		= mntns_owner,
  };
 +
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+/* - To retrieve the non sus mount from mount, takes no any references */
-+struct mount *susfs_get_non_sus_mnt_from_mnt(struct mount *orig_mnt) {
++/* - To retrieve the non sus mount id from mount */
++int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt) {
 +	struct mount *mnt = orig_mnt;
++	int mnt_id;
 +
 +	lock_mount_hash();
 +	for (; mnt && mnt->mnt_parent && mnt != mnt->mnt_parent && mnt->mnt_id >= DEFAULT_KSU_MNT_ID; mnt = mnt->mnt_parent) { }
++	mnt_id = mnt->mnt_id;
 +	unlock_mount_hash();
-+	return mnt;
++	return mnt_id;
 +}
 +
 +/* - To retrieve the non sus vfsmount from vfsmount, takes a reference on &mnt->mnt and mnt->mnt.mnt_root */
@@ -1037,7 +1039,7 @@ index 2e244ada1..792e1cb04 100644
  		seq_puts(m, saved_boot_config);
  	return 0;
 diff --git a/fs/proc/fd.c b/fs/proc/fd.c
-index 913bef0d2..3c571f21a 100644
+index 913bef0d2..3f04e2656 100644
 --- a/fs/proc/fd.c
 +++ b/fs/proc/fd.c
 @@ -13,17 +13,27 @@
@@ -1053,7 +1055,7 @@ index 913bef0d2..3c571f21a 100644
  #include "fd.h"
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+struct mount *susfs_get_non_sus_mnt_from_mnt(struct mount *orig_mnt);
++extern int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt);
 +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +
  static int seq_show(struct seq_file *m, void *v)
@@ -1097,7 +1099,7 @@ index 913bef0d2..3c571f21a 100644
 +
 +		seq_printf(m, "pos:\t%lli\nflags:\t0%o\nmnt_id:\t%i\nino:\t%lu\n",
 +				(long long)file->f_pos, f_flags,
-+				susfs_get_non_sus_mnt_from_mnt(mnt)->mnt_id,
++				susfs_get_non_sus_mnt_id_from_mnt(mnt),
 +				path.dentry->d_inode->i_ino);
 +		path_put(&path);
 +		kfree(pathname);
@@ -1620,10 +1622,10 @@ index 09e8ed7d4..419947280 100644
  	if (error >= 0)
  		error = buf.error;
 diff --git a/fs/stat.c b/fs/stat.c
-index 357a1db41..cf9b41bbc 100644
+index 357a1db41..7bc603808 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
-@@ -18,12 +18,20 @@
+@@ -18,12 +18,21 @@
  #include <linux/pagemap.h>
  #include <linux/compat.h>
  
@@ -1639,12 +1641,13 @@ index 357a1db41..cf9b41bbc 100644
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 +extern void susfs_generic_fillattr_spoofer(struct inode *inode, struct kstat *stat);
++extern int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt);
 +#endif
 +
  /**
   * generic_fillattr - Fill in the basic attributes from the inode struct
   * @mnt_userns:	user namespace of the mount the inode was found from
-@@ -56,6 +64,9 @@ void generic_fillattr(struct user_namespace *mnt_userns, struct inode *inode,
+@@ -56,6 +65,9 @@ void generic_fillattr(struct user_namespace *mnt_userns, struct inode *inode,
  	stat->ctime = inode->i_ctime;
  	stat->blksize = i_blocksize(inode);
  	stat->blocks = inode->i_blocks;
@@ -1654,7 +1657,7 @@ index 357a1db41..cf9b41bbc 100644
  }
  EXPORT_SYMBOL_NS(generic_fillattr, ANDROID_GKI_VFS_EXPORT_ONLY);
  
-@@ -120,8 +131,18 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
+@@ -120,8 +132,18 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
  
  	mnt_userns = mnt_user_ns(path->mnt);
  	if (inode->i_op->getattr)
@@ -1673,7 +1676,7 @@ index 357a1db41..cf9b41bbc 100644
  
  	generic_fillattr(mnt_userns, inode, stat);
  	return 0;
-@@ -171,6 +192,13 @@ EXPORT_SYMBOL_NS(vfs_getattr, ANDROID_GKI_VFS_EXPORT_ONLY);
+@@ -171,6 +193,13 @@ EXPORT_SYMBOL_NS(vfs_getattr, ANDROID_GKI_VFS_EXPORT_ONLY);
   *
   * 0 will be returned on success, and a -ve error code if unsuccessful.
   */
@@ -1687,7 +1690,7 @@ index 357a1db41..cf9b41bbc 100644
  int vfs_fstat(int fd, struct kstat *stat)
  {
  	struct fd f;
-@@ -180,10 +208,25 @@ int vfs_fstat(int fd, struct kstat *stat)
+@@ -180,10 +209,25 @@ int vfs_fstat(int fd, struct kstat *stat)
  	if (!f.file)
  		return -EBADF;
  	error = vfs_getattr(&f.file->f_path, stat, STATX_BASIC_STATS, 0);
@@ -1713,7 +1716,7 @@ index 357a1db41..cf9b41bbc 100644
  /**
   * vfs_statx - Get basic and extra attributes by filename
   * @dfd: A file descriptor representing the base dir for a relative filename
-@@ -206,6 +249,18 @@ static int vfs_statx(int dfd, const char __user *filename, int flags,
+@@ -206,6 +250,18 @@ static int vfs_statx(int dfd, const char __user *filename, int flags,
  	unsigned lookup_flags = 0;
  	int error;
  
@@ -1732,6 +1735,24 @@ index 357a1db41..cf9b41bbc 100644
  	if (flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT | AT_EMPTY_PATH |
  		      AT_STATX_SYNC_TYPE))
  		return -EINVAL;
+@@ -223,7 +279,17 @@ static int vfs_statx(int dfd, const char __user *filename, int flags,
+ 		goto out;
+ 
+ 	error = vfs_getattr(&path, stat, request_mask, flags);
++
++#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
++	if (real_mount(path.mnt)->mnt_id >= DEFAULT_KSU_MNT_ID &&
++		likely(susfs_is_current_proc_umounted_app()))
++		stat->mnt_id = susfs_get_non_sus_mnt_id_from_mnt(real_mount(path.mnt));
++	else
++		stat->mnt_id = real_mount(path.mnt)->mnt_id;
++#else
+ 	stat->mnt_id = real_mount(path.mnt)->mnt_id;
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
++
+ 	stat->result_mask |= STATX_MNT_ID;
+ 	if (path.mnt->mnt_root == path.dentry)
+ 		stat->attributes |= STATX_ATTR_MOUNT_ROOT;
 diff --git a/fs/statfs.c b/fs/statfs.c
 index 2a37f9f3d..008bf6c68 100644
 --- a/fs/statfs.c
