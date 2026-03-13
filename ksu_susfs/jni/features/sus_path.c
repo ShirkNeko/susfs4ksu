@@ -13,9 +13,7 @@
 #define CMD_SUSFS_ADD_SUS_PATH_LOOP 0x55553
 
 struct st_susfs_sus_path {
-	unsigned long           target_ino;
 	char                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
-	unsigned int            i_uid;
 	int                     err;
 };
 
@@ -54,8 +52,6 @@ int add_sus_path(int argc, char *argv[]) {
 		return info.err;
 	}
 	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
-	info.target_ino = sb.st_ino;
-	info.i_uid = sb.st_uid;
 	info.err = ERR_CMD_NOT_SUPPORTED;
 	syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_ADD_SUS_PATH, &info);
 	PRT_MSG_IF_CMD_NOT_SUPPORTED(info.err, CMD_SUSFS_ADD_SUS_PATH);
@@ -77,8 +73,6 @@ int add_sus_path_loop(int argc, char *argv[]) {
 	}
 
 	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
-	info.target_ino = sb.st_ino;
-	info.i_uid = sb.st_uid;
 	info.err = ERR_CMD_NOT_SUPPORTED;
 	syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_ADD_SUS_PATH_LOOP, &info);
 	PRT_MSG_IF_CMD_NOT_SUPPORTED(info.err, CMD_SUSFS_ADD_SUS_PATH_LOOP);
