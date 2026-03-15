@@ -11,130 +11,109 @@ index 51292b98..a6ff8446 100644
  kernelsu-objs += pkg_observer.o
  kernelsu-objs += setuid_hook.o
 diff --git a/kernel/Kconfig b/kernel/Kconfig
-index cc4dbb3a..b0a3786b 100644
+index a4168f0d..bc08ed90 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
-@@ -1,20 +1,108 @@
- menu "KernelSU"
+@@ -2,7 +2,6 @@ menu "KernelSU"
  
  config KSU
--	tristate "KernelSU function support"
--	depends on KPROBES
--	default y
--	help
--	  Enable kernel-level root privileges on Android System.
--	  Requires CONFIG_KPROBES for kernel hooking support.
--	  To compile as a module, choose M here: the
--	  module will be called kernelsu.
-+    tristate "KernelSU function support"
-+    default y
-+    help
-+      Enable kernel-level root privileges on Android System.
-+      Requires CONFIG_KPROBES for kernel hooking support.
-+      To compile as a module, choose M here: the
-+      module will be called kernelsu.
+ 	tristate "KernelSU function support"
+-	depends on KPROBES && EXT4_FS
+ 	default y
+ 	help
+ 	  Enable kernel-level root privileges on Android System.
+@@ -18,4 +17,92 @@ config KSU_DEBUG
+ 	help
+ 	  Enable KernelSU debug mode.
  
- config KSU_DEBUG
--	bool "KernelSU debug mode"
--	depends on KSU
--	default n
--	help
--	  Enable KernelSU debug mode.
-+    bool "KernelSU debug mode"
-+    depends on KSU
-+    default n
-+    help
-+      Enable KernelSU debug mode.
-+
 +menu "KernelSU - SUSFS"
 +config KSU_SUSFS
-+    bool "KernelSU addon - SUSFS"
-+    depends on KSU
-+    depends on THREAD_INFO_IN_TASK
-+    default y
-+    help
-+        Patch and Enable SUSFS to kernel with KernelSU.
++	bool "KernelSU addon - SUSFS"
++	depends on KSU
++	depends on THREAD_INFO_IN_TASK
++	default y
++	help
++	  Patch and Enable SUSFS to kernel with KernelSU.
 +
 +config KSU_SUSFS_SUS_PATH
-+    bool "Enable to hide suspicious path"
-+    depends on KSU_SUSFS
-+    default y
-+    help
-+        - Allow hiding the user-defined path and all its sub-paths from various system calls.
-+        - Use "add_sus_path_loop" instead of "add_sus_path" if the user-defined path is frequently modified.
-+        - Use with cautious as it may cause performance loss and will be vulnerable to side channel attacks,
-+          just disable this feature if it doesn't work for you or you don't need it at all.
-+        - Effective only on zygote spawned user app process with uid >= 10000.
++	bool "Enable to hide suspicious path"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow hiding the user-defined path and all its sub-paths from various system calls.
++	  - Use "add_sus_path_loop" instead of "add_sus_path" if the user-defined path is frequently modified.
++	  - Use with cautious as it may cause performance loss and will be vulnerable to side channel attacks,
++	  	just disable this feature if it doesn't work for you or you don't need it at all.
++	  - Effective only on zygote spawned user app process with uid >= 10000.
 +
 +config KSU_SUSFS_SUS_MOUNT
-+    bool "Enable to hide suspicious mounts"
-+    depends on KSU_SUSFS
-+    default y
-+    help
-+        - Automatically assign fake mnt_id and fake mnt_group_id for mounts mounted by ksu process until /sdcard is decrypted, this is to evade from mnt_id/mnt_group_id gap detections.
-+        - Allow hiding all sus mounts from /proc/self/[mounts|mountinfo|mountstat] for non-su processes.
++	bool "Enable to hide suspicious mounts"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Automatically assign fake mnt_id and fake mnt_group_id for mounts mounted by ksu process until /sdcard is  decrypted, this is to evade from mnt_id/mnt_group_id gap detections.
++	  - Allow hiding all sus mounts from /proc/self/[mounts|mountinfo|mountstat] for non-su processes.
 +
 +config KSU_SUSFS_SUS_KSTAT
-+    bool "Enable to spoof suspicious kstat"
-+    depends on KSU_SUSFS
-+    default y
-+    help
-+        - Allow spoofing the kstat of user-defined file/directory.
-+        - Effective only on zygote spawned user app process with uid >= 10000.
++	bool "Enable to spoof suspicious kstat"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow spoofing the kstat of user-defined file/directory.
++	  - Effective only on zygote spawned user app process with uid >= 10000.
 +
 +config KSU_SUSFS_SPOOF_UNAME
-+    bool "Enable to spoof uname"
-+    depends on KSU_SUSFS
-+    default y
-+    help
-+        - Allow spoofing the string returned by uname syscall to user-defined string.
-+        - Effective on all processes.
++	bool "Enable to spoof uname"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow spoofing the string returned by uname syscall to user-defined string.
++	  - Effective on all processes.
 +
 +config KSU_SUSFS_ENABLE_LOG
-+    bool "Enable logging susfs log to kernel"
-+    depends on KSU_SUSFS
-+    default y
-+    help
-+        - Allow logging susfs log to kernel, uncheck it to completely disable all susfs log.
++	bool "Enable logging susfs log to kernel"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow logging susfs log to kernel, uncheck it to completely disable all susfs log.
 +
 +config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-+    bool "Enable to automatically hide ksu and susfs symbols from /proc/kallsyms"
-+    depends on KSU_SUSFS
-+    default y
-+    help
-+        - Automatically hide ksu and susfs symbols from '/proc/kallsyms'.
-+        - Effective on all processes.
++	bool "Enable to automatically hide ksu and susfs symbols from /proc/kallsyms"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Automatically hide ksu and susfs symbols from '/proc/kallsyms'.
++	  - Effective on all processes.
 +
 +config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-+    bool "Enable to spoof /proc/bootconfig (gki) or /proc/cmdline (non-gki)"
-+    depends on KSU_SUSFS
-+    default y
-+    help
-+        - Spoof the output of /proc/bootconfig (gki) or /proc/cmdline (non-gki) with a user-defined file.
-+        - Effective on all processes.
++	bool "Enable to spoof /proc/bootconfig (gki) or /proc/cmdline (non-gki)"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Spoof the output of /proc/bootconfig (gki) or /proc/cmdline (non-gki) with a user-defined file.
++	  - Effective on all processes.
 +
 +config KSU_SUSFS_OPEN_REDIRECT
-+    bool "Enable to redirect a path to be opened with another path (experimental)"
-+    depends on KSU_SUSFS
-+    default y
-+    help
-+        - Allow redirecting a target path to be opened with another user-defined path.
-+        - Please be reminded that process with open access to the target and redirected path can be detected.
-+        - Effective only on processes with uid < 2000.
++	bool "Enable to redirect a path to be opened with another path"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow redirecting a target path to be opened with another user-defined path.
++	  - Please be reminded that process with open access to the target and redirected path can be detected.
++	  - Effective only on processes with uid < 2000.
 +
 +config KSU_SUSFS_SUS_MAP
-+    bool "Enable to hide some mmapped real file from different proc maps interfaces"
-+    depends on KSU_SUSFS
-+    default y
-+    help
-+        - Allow hiding mmapped real file from /proc/<pid>/[maps|smaps|smaps_rollup|map_files|mem|pagemap]
-+        - It does NOT support hiding for anon memory.
-+        - It does NOT hide any inline hooks or plt hooks cause by the injected library itself.
-+        - It may not be able to evade detections by apps that implement a good injection detection.
-+        - Effective only on zygote spawned umounted user app process >= 10000.
++	bool "Enable to hide some mmapped real file from different proc maps interfaces"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow hiding mmapped real file from /proc/<pid>/[maps|smaps|smaps_rollup|map_files|mem|pagemap]
++	  - It does NOT support hiding for anon memory.
++	  - It does NOT hide any inline hooks or plt hooks cause by the injected library itself.
++	  - It may not be able to evade detections by apps that implement a good injection detection.
++	  - Effective only on zygote spawned umounted user app process >= 10000.
 +
 +endmenu
- 
  endmenu
 diff --git a/kernel/Makefile b/kernel/Makefile
 index 28e5a3a8..63559d7e 100644
@@ -155,10 +134,10 @@ index 28e5a3a8..63559d7e 100644
 +endif
  # Keep a new line here!! Because someone may append config
 diff --git a/kernel/app_profile.c b/kernel/app_profile.c
-index f544dd8d..e592bb45 100644
+index 8eeea1ed..b336b87d 100644
 --- a/kernel/app_profile.c
 +++ b/kernel/app_profile.c
-@@ -13,7 +13,9 @@
+@@ -14,7 +14,9 @@
  #include "klog.h" // IWYU pragma: keep
  #include "selinux/selinux.h"
  #include "su_mount_ns.h"
@@ -168,7 +147,7 @@ index f544dd8d..e592bb45 100644
  
  #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0)
  static struct group_info root_groups = { .usage = REFCOUNT_INIT(2) };
-@@ -105,8 +107,10 @@ static void disable_seccomp(void)
+@@ -106,8 +108,10 @@ static void disable_seccomp(void)
  void escape_with_root_profile(void)
  {
      struct cred *cred;
@@ -177,9 +156,9 @@ index f544dd8d..e592bb45 100644
      struct task_struct *t;
 +#endif // #ifndef CONFIG_KSU_SUSFS
      struct root_profile profile;
+     struct user_struct *new_user;
  
-     cred = prepare_creds();
-@@ -154,9 +158,11 @@ void escape_with_root_profile(void)
+@@ -183,9 +187,11 @@ void escape_with_root_profile(void)
  
      disable_seccomp();
  
@@ -190,7 +169,7 @@ index f544dd8d..e592bb45 100644
 +#endif // #ifndef CONFIG_KSU_SUSFS
  
      setup_mount_ns(profile.namespaces);
- }
+     return;
 diff --git a/kernel/kernel_umount.c b/kernel/kernel_umount.c
 index e1d67bd9..ba06b66d 100644
 --- a/kernel/kernel_umount.c
