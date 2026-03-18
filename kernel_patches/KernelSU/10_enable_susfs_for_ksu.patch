@@ -192,20 +192,20 @@ index e1d67bd9..ba06b66d 100644
      pr_info("handle umount for uid: %d, pid: %d\n", new_uid, current->pid);
  
 diff --git a/kernel/ksu.c b/kernel/ksu.c
-index 1cc3a11b..c38ab002 100644
+index 02cf1bfc..7bb089a5 100644
 --- a/kernel/ksu.c
 +++ b/kernel/ksu.c
-@@ -4,6 +4,9 @@
- #include <linux/module.h>
+@@ -5,6 +5,9 @@
  #include <linux/sched.h>
  #include <linux/workqueue.h>
+ #include <linux/moduleparam.h>
 +#ifdef CONFIG_KSU_SUSFS
 +#include <linux/susfs.h>
 +#endif // #ifdef CONFIG_KSU_SUSFS
  
  #include "allowlist.h"
  #include "app_profile.h"
-@@ -11,7 +14,12 @@
+@@ -12,7 +15,12 @@
  #include "klog.h" // IWYU pragma: keep
  #include "manager.h"
  #include "throne_tracker.h"
@@ -218,7 +218,7 @@ index 1cc3a11b..c38ab002 100644
  #include "ksud.h"
  #include "supercalls.h"
  #include "ksu.h"
-@@ -100,9 +108,19 @@ int __init kernelsu_init(void)
+@@ -111,9 +119,19 @@ int __init kernelsu_init(void)
          ksu_allowlist_init();
          ksu_load_allow_list();
  
@@ -238,7 +238,7 @@ index 1cc3a11b..c38ab002 100644
          ksu_observer_init();
          ksu_file_wrapper_init();
  
-@@ -115,13 +133,24 @@ int __init kernelsu_init(void)
+@@ -126,13 +144,24 @@ int __init kernelsu_init(void)
          }
  
      } else {
@@ -263,7 +263,7 @@ index 1cc3a11b..c38ab002 100644
  
          ksu_file_wrapper_init();
      }
-@@ -143,10 +172,12 @@ void kernelsu_exit(void)
+@@ -154,10 +183,12 @@ void kernelsu_exit(void)
  
      ksu_observer_exit();
  
