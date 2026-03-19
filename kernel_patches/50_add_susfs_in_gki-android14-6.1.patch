@@ -1250,7 +1250,7 @@ index 913bef0d2..bfefa9b10 100644
  	/* show_fd_locks() never deferences files so a stale value is safe */
  	show_fd_locks(m, file, files);
 diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
-index d6f37ed84..d6c114bdf 100644
+index d6f37ed84..69fc5a69d 100644
 --- a/fs/proc/task_mmu.c
 +++ b/fs/proc/task_mmu.c
 @@ -21,6 +21,9 @@
@@ -1259,7 +1259,7 @@ index d6f37ed84..d6c114bdf 100644
  #include <trace/hooks/mm.h>
 +#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
 +#include <linux/susfs_def.h>
-+#endif // #if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
++#endif
  
  #include <asm/elf.h>
  #include <asm/tlb.h>
@@ -1269,10 +1269,10 @@ index d6f37ed84..d6c114bdf 100644
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 +extern void susfs_show_map_vma_spoofer(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++#endif
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +extern int susfs_open_redirect_spoof_show_map_vma(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char *spoofed_name);
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++#endif
 +
  static void
  show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
@@ -1283,7 +1283,7 @@ index d6f37ed84..d6c114bdf 100644
  	const char *name = NULL;
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +	char *spoofed_redirected_name = NULL;
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++#endif
  
  	if (file) {
  		struct inode *inode = file_inode(vma->vm_file);
@@ -1294,7 +1294,7 @@ index d6f37ed84..d6c114bdf 100644
 +				goto orig_flow;
 +			}
 +		}
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++#endif
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +		if (inode->i_mapping &&
 +			unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags) &&
@@ -1326,30 +1326,28 @@ index d6f37ed84..d6c114bdf 100644
  
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +orig_flow:
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++#endif
 +
  	start = vma->vm_start;
  	end = VMA_PAD_START(vma);
  	show_vma_header_prefix(m, start, end, flags, pgoff, dev, ino);
-@@ -300,6 +349,17 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
- 	 * Print the dentry name for named mappings, and a
- 	 * special [heap] marker for the heap:
- 	 */
-+
+@@ -306,6 +355,15 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
+ 		goto done;
+ 	}
+ 
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +	if (spoofed_redirected_name) {
-+		seq_pad(m, ' ');
 +		seq_puts(m, spoofed_redirected_name);
 +		seq_putc(m, '\n');
 +		kfree(spoofed_redirected_name);
 +		return;
 +	}
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++#endif
 +
- 	if (file) {
- 		seq_pad(m, ' ');
- 		seq_file_path(m, file, "\n");
-@@ -888,6 +948,29 @@ static int show_smap(struct seq_file *m, void *v)
+ 	if (vma->vm_ops && vma->vm_ops->name) {
+ 		name = vma->vm_ops->name(vma);
+ 		if (name)
+@@ -888,6 +946,29 @@ static int show_smap(struct seq_file *m, void *v)
  	if (!vma_pages(vma))
  		goto show_pad;
  
@@ -1374,12 +1372,12 @@ index d6f37ed84..d6c114bdf 100644
 +			goto show_pad;
 +		}
 +	}
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
++#endif
 +
  	smap_gather_stats(vma, &mss, 0);
  
  	show_map_vma(m, vma);
-@@ -945,7 +1028,23 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
+@@ -945,7 +1026,23 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
  
  	vma_start = vma->vm_start;
  	do {
@@ -1394,26 +1392,26 @@ index d6f37ed84..d6c114bdf 100644
 +				goto bypass_orig_flow;
 +			}
 +		}
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
++#endif
 +
  		smap_gather_stats(vma, &mss, 0);
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +bypass_orig_flow:
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
++#endif
  		last_vma_end = vma->vm_end;
  
  		/*
-@@ -1696,6 +1795,9 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
+@@ -1696,6 +1793,9 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
  	unsigned long start_vaddr;
  	unsigned long end_vaddr;
  	int ret = 0, copied = 0;
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +	struct vm_area_struct *vma;
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
++#endif
  
  	if (!mm || !mmget_not_zero(mm))
  		goto out;
-@@ -1751,6 +1853,18 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
+@@ -1751,6 +1851,18 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
  		if (ret)
  			goto out_free;
  		ret = walk_page_range(mm, start_vaddr, end, &pagemap_ops, &pm);
@@ -1428,7 +1426,7 @@ index d6f37ed84..d6c114bdf 100644
 +				pm.buffer->pme = 0;
 +			}
 +		}
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
++#endif
  		mmap_read_unlock(mm);
  		start_vaddr = end;
  
