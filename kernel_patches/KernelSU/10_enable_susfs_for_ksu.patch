@@ -11,7 +11,7 @@ index 51292b98..a6ff8446 100644
  kernelsu-objs += pkg_observer.o
  kernelsu-objs += setuid_hook.o
 diff --git a/kernel/Kconfig b/kernel/Kconfig
-index a4168f0d..bc08ed90 100644
+index a4168f0d..37703879 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
 @@ -2,7 +2,6 @@ menu "KernelSU"
@@ -22,7 +22,7 @@ index a4168f0d..bc08ed90 100644
  	default y
  	help
  	  Enable kernel-level root privileges on Android System.
-@@ -18,4 +17,92 @@ config KSU_DEBUG
+@@ -18,4 +17,94 @@ config KSU_DEBUG
  	help
  	  Enable KernelSU debug mode.
  
@@ -99,8 +99,10 @@ index a4168f0d..bc08ed90 100644
 +	default y
 +	help
 +	  - Allow redirecting a target path to be opened with another user-defined path.
-+	  - Please be reminded that process with open access to the target and redirected path can be detected.
-+	  - Effective only on processes with uid < 2000.
++          - Both target path and redirected path must be existed before they can be added to the kernel.
++          - Users have to take care of the selinux permission of both target path and redirected path by themselves.
++          - OPEN_REDIRECT does not bypass detections, but users may try other feature like SUS_KSTAT to bypass some of them.
++	  - Effective only on processes with pre-defined uid scheme.
 +
 +config KSU_SUSFS_SUS_MAP
 +	bool "Enable to hide some mmapped real file from different proc maps interfaces"
