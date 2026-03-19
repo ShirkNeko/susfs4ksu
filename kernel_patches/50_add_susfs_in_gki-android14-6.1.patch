@@ -134,7 +134,7 @@ index 28e8203de..210c69377 100644
  	 * We move the actual failure in case of RLIMIT_NPROC excess from
  	 * set*uid() to execve() because too many poorly written programs
 diff --git a/fs/namei.c b/fs/namei.c
-index 8e9c0b567..e9075e59b 100644
+index 8e9c0b567..035234028 100644
 --- a/fs/namei.c
 +++ b/fs/namei.c
 @@ -40,10 +40,18 @@
@@ -353,7 +353,7 @@ index 8e9c0b567..e9075e59b 100644
  
  	return walk_component(nd, WALK_TRAILING);
  }
-@@ -3403,15 +3504,40 @@ static struct dentry *lookup_open(struct nameidata *nd, struct file *file,
+@@ -3403,15 +3504,39 @@ static struct dentry *lookup_open(struct nameidata *nd, struct file *file,
  	int error, create_error = 0;
  	umode_t mode = op->mode;
  	DECLARE_WAIT_QUEUE_HEAD_ONSTACK(wq);
@@ -371,9 +371,8 @@ index 8e9c0b567..e9075e59b 100644
 +	if (is_nd_state_open_last && dentry && !IS_ERR(dentry) && dentry->d_inode &&
 +		susfs_is_inode_sus_path(dentry->d_inode))
 +	{
-+		if (d_in_lookup(dentry)) {
++		if (d_in_lookup(dentry))
 +			d_lookup_done(dentry);
-+		}
 +		dput(dentry);
 +		dentry = NULL;
 +		found_sus_path = true;
@@ -394,7 +393,7 @@ index 8e9c0b567..e9075e59b 100644
  			if (IS_ERR(dentry))
  				return dentry;
  		}
-@@ -3510,6 +3636,9 @@ static const char *open_last_lookups(struct nameidata *nd,
+@@ -3510,6 +3635,9 @@ static const char *open_last_lookups(struct nameidata *nd,
  	bool got_write = false;
  	struct dentry *dentry;
  	const char *res;
@@ -404,61 +403,59 @@ index 8e9c0b567..e9075e59b 100644
  
  	nd->flags |= op->intent;
  
-@@ -3815,6 +3944,7 @@ struct file *do_filp_open(int dfd, struct filename *pathname,
+@@ -3806,12 +3934,20 @@ static struct file *path_openat(struct nameidata *nd,
+ 	return ERR_PTR(error);
+ }
+ 
++#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++extern struct filename* susfs_get_redirected_path(unsigned long ino);
++#endif
++
+ struct file *do_filp_open(int dfd, struct filename *pathname,
+ 		const struct open_flags *op)
+ {
+ 	struct nameidata nd;
+ 	int flags = op->lookup_flags;
+ 	struct file *filp;
++#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++	struct filename *fake_pathname;
++	struct inode *inode;
++#endif
  
  	set_nameidata(&nd, dfd, pathname, NULL);
  	filp = path_openat(&nd, op, flags | LOOKUP_RCU);
-+
- 	if (unlikely(filp == ERR_PTR(-ECHILD)))
+@@ -3819,6 +3955,31 @@ struct file *do_filp_open(int dfd, struct filename *pathname,
  		filp = path_openat(&nd, op, flags);
  	if (unlikely(filp == ERR_PTR(-ESTALE)))
-@@ -5106,6 +5236,11 @@ int readlink_copy(char __user *buffer, int buflen, const char *link)
-  *
-  * Does not call security hook.
-  */
-+
+ 		filp = path_openat(&nd, op, flags | LOOKUP_REVAL);
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+extern int susfs_open_redirect_spoof_vfs_readlink(struct inode *inode, char __user *buffer, int buflen);
-+#endif
-+
- int vfs_readlink(struct dentry *dentry, char __user *buffer, int buflen)
- {
- 	struct inode *inode = d_inode(dentry);
-@@ -5115,7 +5250,18 @@ int vfs_readlink(struct dentry *dentry, char __user *buffer, int buflen)
- 
- 	if (unlikely(!(inode->i_opflags & IOP_DEFAULT_READLINK))) {
- 		if (unlikely(inode->i_op->readlink))
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++	if (!IS_ERR(filp)) {
++		inode = file_inode(filp);
++		if (inode->i_mapping &&
++			unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &inode->i_mapping->flags)) &&
++			current_uid().val < 2000)
 +		{
-+			if (PRE_CHECK_OPEN_REDIRECT(inode)) {
-+				res = susfs_open_redirect_spoof_vfs_readlink(inode, buffer, buflen);
-+				if (!res)
-+					return res;
++			fake_pathname = susfs_get_redirected_path(inode->i_ino);
++			if (!IS_ERR(fake_pathname)) {
++				restore_nameidata();
++				filp_close(filp, NULL);
++				// no need to do `putname(pathname);` here as it will be done by calling process
++				set_nameidata(&nd, dfd, fake_pathname, NULL);
++				filp = path_openat(&nd, op, flags | LOOKUP_RCU);
++				if (unlikely(filp == ERR_PTR(-ECHILD)))
++					filp = path_openat(&nd, op, flags);
++				if (unlikely(filp == ERR_PTR(-ESTALE)))
++					filp = path_openat(&nd, op, flags | LOOKUP_REVAL);
++				restore_nameidata();
++				putname(fake_pathname);
++				return filp;
 +			}
-+			return inode->i_op->readlink(dentry, buffer, buflen);
-+		}
-+#else
- 			return inode->i_op->readlink(dentry, buffer, buflen);
-+#endif
- 
- 		if (!d_is_symlink(dentry))
- 			return -EINVAL;
-@@ -5131,6 +5277,15 @@ int vfs_readlink(struct dentry *dentry, char __user *buffer, int buflen)
- 		if (IS_ERR(link))
- 			return PTR_ERR(link);
- 	}
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	if (PRE_CHECK_OPEN_REDIRECT(inode)) {
-+		res = susfs_open_redirect_spoof_vfs_readlink(inode, buffer, buflen);
-+		if (!res) {
-+			do_delayed_call(&done);
-+			return res;
 +		}
 +	}
 +#endif
- 	res = readlink_copy(buffer, buflen, link);
- 	do_delayed_call(&done);
- 	return res;
+ 	restore_nameidata();
+ 	return filp;
+ }
 diff --git a/fs/namespace.c b/fs/namespace.c
 index f22f76d9c..c0f1cad21 100644
 --- a/fs/namespace.c
@@ -896,7 +893,7 @@ index dd5bc6ffa..9cf521b12 100644
  			   inode_mark->wd, inode->i_ino, inode->i_sb->s_dev,
  			   inotify_mark_user_mask(mark));
 diff --git a/fs/open.c b/fs/open.c
-index 026a4047c..96a363b4b 100644
+index 026a4047c..a55b728c7 100644
 --- a/fs/open.c
 +++ b/fs/open.c
 @@ -33,6 +33,9 @@
@@ -942,82 +939,15 @@ index 026a4047c..96a363b4b 100644
  	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
  		return -EINVAL;
  
-@@ -1322,23 +1344,55 @@ struct file *file_open_root(const struct path *root,
- }
- EXPORT_SYMBOL(file_open_root);
- 
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+extern int susfs_open_redirect_spoof_do_sys_openat(struct inode *inode, char *out_redirected_name);
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+
- static long do_sys_openat2(int dfd, const char __user *filename,
- 			   struct open_how *how)
- {
- 	struct open_flags op;
- 	int fd = build_open_flags(how, &op);
- 	struct filename *tmp;
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	char *redirected_name = NULL;
-+	bool is_inode_open_redirect = false;
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
- 
- 	if (fd)
- 		return fd;
- 
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+retry:
-+	if (is_inode_open_redirect && redirected_name) {
-+		tmp = getname_kernel(redirected_name);
-+		goto bypass_orig_flow;
-+	}
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+
- 	tmp = getname(filename);
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+bypass_orig_flow:
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
- 	if (IS_ERR(tmp))
- 		return PTR_ERR(tmp);
- 
- 	fd = get_unused_fd_flags(how->flags);
- 	if (fd >= 0) {
- 		struct file *f = do_filp_open(dfd, tmp, &op);
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+		if (f && !IS_ERR(f) && !is_inode_open_redirect) {
-+			if (PRE_CHECK_OPEN_REDIRECT_WITHOUT_UID_CHECK(file_inode(f))) {
-+				if (!susfs_open_redirect_spoof_do_sys_openat(file_inode(f), redirected_name)) {
-+					is_inode_open_redirect = true;
-+					filp_close(f, NULL);
-+					put_unused_fd(fd);
-+					putname(tmp);
-+					goto retry;
-+				}
-+			}
-+		}
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
- 		if (IS_ERR(f)) {
- 			put_unused_fd(fd);
- 			fd = PTR_ERR(f);
-@@ -1347,6 +1401,10 @@ static long do_sys_openat2(int dfd, const char __user *filename,
- 			fd_install(fd, f);
- 		}
- 	}
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	if (is_inode_open_redirect && redirected_name)
-+		kfree(redirected_name);
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
- 	putname(tmp);
- 	return fd;
- }
 diff --git a/fs/proc/base.c b/fs/proc/base.c
-index b0ec673a2..e6fdcc0e2 100644
+index b0ec673a2..981c143d7 100644
 --- a/fs/proc/base.c
 +++ b/fs/proc/base.c
 @@ -100,6 +100,10 @@
  #include <linux/cn_proc.h>
  #include <linux/cpufreq_times.h>
  #include <linux/dma-buf.h>
-+#if defined(CONFIG_KSU_SUSFS_SUS_MAP) && defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
++#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +#include <linux/susfs_def.h>
 +#endif
 +
@@ -1060,37 +990,7 @@ index b0ec673a2..e6fdcc0e2 100644
  
  		if (write && copy_from_user(page, buf, this_len)) {
  			copied = -EFAULT;
-@@ -1835,6 +1861,10 @@ static const char *proc_pid_get_link(struct dentry *dentry,
- 	return ERR_PTR(error);
- }
- 
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+extern int susfs_open_redirect_spoof_do_proc_readlink(struct inode *inode, char *tmp_buf, int buflen);
-+#endif
-+
- static int do_proc_readlink(const struct path *path, char __user *buffer, int buflen)
- {
- 	char *tmp = kmalloc(PATH_MAX, GFP_KERNEL);
-@@ -1844,6 +1874,18 @@ static int do_proc_readlink(const struct path *path, char __user *buffer, int bu
- 	if (!tmp)
- 		return -ENOMEM;
- 
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	if (PRE_CHECK_OPEN_REDIRECT(path->dentry->d_inode)) {
-+		if (!susfs_open_redirect_spoof_do_proc_readlink(path->dentry->d_inode, tmp, buflen)) {
-+			len = strlen(tmp);
-+			if (copy_to_user(buffer, tmp, len))
-+				len = -EFAULT;
-+			kfree(tmp);
-+			return len;
-+		}
-+	}
-+#endif
-+
- 	pathname = d_path(path, tmp, PATH_MAX);
- 	len = PTR_ERR(pathname);
- 	if (IS_ERR(pathname))
-@@ -2423,6 +2465,9 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
+@@ -2423,6 +2449,9 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
  	struct map_files_info *p;
  	int ret;
  	struct vma_iterator vmi;
@@ -1100,7 +1000,7 @@ index b0ec673a2..e6fdcc0e2 100644
  
  	genradix_init(&fa);
  
-@@ -2466,6 +2511,13 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
+@@ -2466,6 +2495,13 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
  	for_each_vma(vmi, vma) {
  		if (!vma->vm_file)
  			continue;
@@ -1139,16 +1039,16 @@ index 2e244ada1..792e1cb04 100644
  		seq_puts(m, saved_boot_config);
  	return 0;
 diff --git a/fs/proc/fd.c b/fs/proc/fd.c
-index 913bef0d2..bfefa9b10 100644
+index 913bef0d2..3f04e2656 100644
 --- a/fs/proc/fd.c
 +++ b/fs/proc/fd.c
-@@ -13,17 +13,35 @@
+@@ -13,17 +13,27 @@
  #include <linux/fs.h>
  
  #include <linux/proc_fs.h>
-+#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
++#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +#include <linux/susfs_def.h>
-+#endif // #if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
  
  #include "../mount.h"
  #include "internal.h"
@@ -1157,10 +1057,6 @@ index 913bef0d2..bfefa9b10 100644
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +extern int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt);
 +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+extern int susfs_open_redirect_spoof_seq_show(struct inode *inode, int *out_mnt_id, unsigned long *out_ino);
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +
  static int seq_show(struct seq_file *m, void *v)
  {
@@ -1171,14 +1067,10 @@ index 913bef0d2..bfefa9b10 100644
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +	struct mount *mnt = NULL;
 +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	int mnt_id = 0;
-+	unsigned long ino = 0;
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
  
  	task = get_proc_task(m->private);
  	if (!task)
-@@ -54,10 +72,70 @@ static int seq_show(struct seq_file *m, void *v)
+@@ -54,10 +64,53 @@ static int seq_show(struct seq_file *m, void *v)
  	if (ret)
  		return ret;
  
@@ -1216,85 +1108,51 @@ index 913bef0d2..bfefa9b10 100644
 +		path_put(&path);
 +out_kfree:
 +		kfree(pathname);
-+		goto orig_flow;
 +	}
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	if (PRE_CHECK_OPEN_REDIRECT(file_inode(file))) {
-+		if (susfs_open_redirect_spoof_seq_show(file_inode(file), &mnt_id, &ino))
-+			goto orig_flow;
-+		seq_printf(m, "pos:\t%lli\nflags:\t0%o\nmnt_id:\t%i\nino:\t%lu\n",
-+				(long long)file->f_pos, f_flags,
-+				mnt_id,
-+				ino);
-+		goto bypass_orig_flow;
-+	}
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+
-+#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
 +orig_flow:
 +	seq_printf(m, "pos:\t%lli\nflags:\t0%o\nmnt_id:\t%i\nino:\t%lu\n",
 +			(long long)file->f_pos, f_flags,
-+			real_mount(file->f_path.mnt)->mnt_id,
++			mnt->mnt_id,
 +			file_inode(file)->i_ino);
-+
 +bypass_orig_flow:
 +#else
  	seq_printf(m, "pos:\t%lli\nflags:\t0%o\nmnt_id:\t%i\nino:\t%lu\n",
  		   (long long)file->f_pos, f_flags,
  		   real_mount(file->f_path.mnt)->mnt_id,
  		   file_inode(file)->i_ino);
-+#endif // #if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
  
  	/* show_fd_locks() never deferences files so a stale value is safe */
  	show_fd_locks(m, file, files);
 diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
-index d6f37ed84..69fc5a69d 100644
+index d6f37ed84..307bf742c 100644
 --- a/fs/proc/task_mmu.c
 +++ b/fs/proc/task_mmu.c
 @@ -21,6 +21,9 @@
  #include <linux/uaccess.h>
  #include <linux/pkeys.h>
  #include <trace/hooks/mm.h>
-+#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
++#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP)
 +#include <linux/susfs_def.h>
 +#endif
  
  #include <asm/elf.h>
  #include <asm/tlb.h>
-@@ -273,6 +276,13 @@ static void show_vma_header_prefix(struct seq_file *m,
+@@ -273,6 +276,10 @@ static void show_vma_header_prefix(struct seq_file *m,
  	seq_putc(m, ' ');
  }
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 +extern void susfs_show_map_vma_spoofer(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);
 +#endif
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+extern int susfs_open_redirect_spoof_show_map_vma(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char *spoofed_name);
-+#endif
 +
  static void
  show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
  {
-@@ -284,14 +294,53 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
- 	unsigned long start, end;
- 	dev_t dev = 0;
- 	const char *name = NULL;
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	char *spoofed_redirected_name = NULL;
-+#endif
+@@ -287,8 +294,32 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
  
  	if (file) {
  		struct inode *inode = file_inode(vma->vm_file);
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+		if (PRE_CHECK_OPEN_REDIRECT(inode)) {
-+			if (!susfs_open_redirect_spoof_show_map_vma(inode, &ino, &dev, spoofed_redirected_name)) {
-+				pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
-+				goto orig_flow;
-+			}
-+		}
-+#endif
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +		if (inode->i_mapping &&
 +			unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags) &&
@@ -1315,39 +1173,16 @@ index d6f37ed84..69fc5a69d 100644
 +			seq_putc(m, ' ');
 +			goto done;
 +		}
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
++#endif
  		dev = inode->i_sb->s_dev;
  		ino = inode->i_ino;
- 		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 +		susfs_show_map_vma_spoofer(inode, &dev, &ino);
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++#endif
+ 		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
  	}
  
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+orig_flow:
-+#endif
-+
- 	start = vma->vm_start;
- 	end = VMA_PAD_START(vma);
- 	show_vma_header_prefix(m, start, end, flags, pgoff, dev, ino);
-@@ -306,6 +355,15 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
- 		goto done;
- 	}
- 
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	if (spoofed_redirected_name) {
-+		seq_puts(m, spoofed_redirected_name);
-+		seq_putc(m, '\n');
-+		kfree(spoofed_redirected_name);
-+		return;
-+	}
-+#endif
-+
- 	if (vma->vm_ops && vma->vm_ops->name) {
- 		name = vma->vm_ops->name(vma);
- 		if (name)
-@@ -888,6 +946,29 @@ static int show_smap(struct seq_file *m, void *v)
+@@ -888,6 +919,29 @@ static int show_smap(struct seq_file *m, void *v)
  	if (!vma_pages(vma))
  		goto show_pad;
  
@@ -1377,7 +1212,7 @@ index d6f37ed84..69fc5a69d 100644
  	smap_gather_stats(vma, &mss, 0);
  
  	show_map_vma(m, vma);
-@@ -945,7 +1026,23 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
+@@ -945,7 +999,23 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
  
  	vma_start = vma->vm_start;
  	do {
@@ -1401,7 +1236,7 @@ index d6f37ed84..69fc5a69d 100644
  		last_vma_end = vma->vm_end;
  
  		/*
-@@ -1696,6 +1793,9 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
+@@ -1696,6 +1766,9 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
  	unsigned long start_vaddr;
  	unsigned long end_vaddr;
  	int ret = 0, copied = 0;
@@ -1411,7 +1246,7 @@ index d6f37ed84..69fc5a69d 100644
  
  	if (!mm || !mmget_not_zero(mm))
  		goto out;
-@@ -1751,6 +1851,18 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
+@@ -1751,6 +1824,18 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
  		if (ret)
  			goto out_free;
  		ret = walk_page_range(mm, start_vaddr, end, &pagemap_ops, &pm);
@@ -1789,7 +1624,7 @@ index 9c53edb60..70c4fbcc4 100644
  	if (error >= 0)
  		error = buf.error;
 diff --git a/fs/stat.c b/fs/stat.c
-index ef50573c7..c47ba9071 100644
+index ef50573c7..78dfa2d6d 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
 @@ -19,12 +19,23 @@
@@ -1833,7 +1668,7 @@ index ef50573c7..c47ba9071 100644
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 +	{
 +		int err = inode->i_op->getattr(mnt_userns, path, stat,
-+				request_mask, query_flags);
++					    request_mask, query_flags);
 +		if (!err)
 +			susfs_generic_fillattr_spoofer(inode, stat);
 +		return err;
@@ -1925,21 +1760,21 @@ index ef50573c7..c47ba9071 100644
  
  	if (path.mnt->mnt_root == path.dentry)
 diff --git a/fs/statfs.c b/fs/statfs.c
-index 96d1c3edf..dcaef335d 100644
+index 96d1c3edf..04b55fd6f 100644
 --- a/fs/statfs.c
 +++ b/fs/statfs.c
 @@ -9,6 +9,10 @@
  #include <linux/security.h>
  #include <linux/uaccess.h>
  #include <linux/compat.h>
-+#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
++#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +#include <linux/susfs_def.h>
-+#endif // #if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +
  #include "internal.h"
  
  static int flags_by_mnt(int mnt_flags)
-@@ -83,9 +87,50 @@ int vfs_get_fsid(struct dentry *dentry, __kernel_fsid_t *fsid)
+@@ -83,14 +87,41 @@ int vfs_get_fsid(struct dentry *dentry, __kernel_fsid_t *fsid)
  }
  EXPORT_SYMBOL(vfs_get_fsid);
  
@@ -1947,27 +1782,13 @@ index 96d1c3edf..dcaef335d 100644
 +extern struct vfsmount *susfs_get_non_sus_vfsmnt_from_vfsmnt(struct vfsmount *vfsmnt);
 +#endif //#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+extern int susfs_open_redirect_spoof_vfs_statfs(struct inode *inode, struct kstatfs *buf);
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+
  int vfs_statfs(const struct path *path, struct kstatfs *buf)
  {
  	int error;
+-
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +	struct vfsmount *no_sus_vfsmnt = NULL;
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	struct inode *inode = path->dentry->d_inode;
 +
-+	if (PRE_CHECK_OPEN_REDIRECT(inode)) {
-+		if (susfs_open_redirect_spoof_vfs_statfs(inode, buf))
-+			goto orig_flow;
-+		return 0;
-+	}
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+
-+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +	if (likely(susfs_is_current_proc_umounted() && path->mnt)) {
 +		no_sus_vfsmnt = susfs_get_non_sus_vfsmnt_from_vfsmnt(path->mnt);
 +		if (path->mnt == no_sus_vfsmnt) {
@@ -1982,14 +1803,20 @@ index 96d1c3edf..dcaef335d 100644
 +		mntput(no_sus_vfsmnt);
 +		return error;
 +	}
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+
-+#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
 +orig_flow:
-+#endif // #if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
- 
++	error = statfs_by_dentry(path->dentry, buf);
++	if (!error)
++		buf->f_flags = calculate_f_flags(path->mnt);
++	return error;
++#else
  	error = statfs_by_dentry(path->dentry, buf);
  	if (!error)
+ 		buf->f_flags = calculate_f_flags(path->mnt);
+ 	return error;
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+ }
+ EXPORT_SYMBOL(vfs_statfs);
+ 
 diff --git a/kernel/kallsyms.c b/kernel/kallsyms.c
 index 824bcc7b5..1087f73dd 100644
 --- a/kernel/kallsyms.c
@@ -2073,7 +1900,7 @@ index 344ceaf5e..c2d1a782d 100644
  	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
  		return -EPERM;
 diff --git a/kernel/sys.c b/kernel/sys.c
-index ba7926d7b..4feb55f30 100644
+index ba7926d7b..7e6d5a079 100644
 --- a/kernel/sys.c
 +++ b/kernel/sys.c
 @@ -654,6 +654,9 @@ SYSCALL_DEFINE1(setuid, uid_t, uid)
@@ -2097,14 +1924,13 @@ index ba7926d7b..4feb55f30 100644
  	kruid = make_kuid(ns, ruid);
  	keuid = make_kuid(ns, euid);
  	ksuid = make_kuid(ns, suid);
-@@ -1298,12 +1305,19 @@ static int override_release(char __user *release, size_t len)
+@@ -1298,12 +1305,18 @@ static int override_release(char __user *release, size_t len)
  	return ret;
  }
  
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
 +extern void susfs_spoof_uname(struct new_utsname* tmp);
 +#endif
-+
  SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
  {
  	struct new_utsname tmp;
