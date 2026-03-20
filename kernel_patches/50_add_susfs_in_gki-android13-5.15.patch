@@ -135,7 +135,7 @@ index b1b9db56a..f977611ff 100644
  	 * We move the actual failure in case of RLIMIT_NPROC excess from
  	 * set*uid() to execve() because too many poorly written programs
 diff --git a/fs/namei.c b/fs/namei.c
-index ce97b60fe..99c0c2be0 100644
+index ce97b60fe..16440ed57 100644
 --- a/fs/namei.c
 +++ b/fs/namei.c
 @@ -39,10 +39,18 @@
@@ -422,7 +422,7 @@ index ce97b60fe..99c0c2be0 100644
  		if (unlikely(inode->i_op->readlink))
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +		{
-+			if (PRE_CHECK_OPEN_REDIRECT(inode)) {
++			if (SUSFS_IS_INODE_OPEN_REDIRECT(inode)) {
 +				res = susfs_open_redirect_spoof_vfs_readlink(inode, buffer, buflen);
 +				if (!res)
 +					return res;
@@ -440,7 +440,7 @@ index ce97b60fe..99c0c2be0 100644
  			return PTR_ERR(link);
  	}
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	if (PRE_CHECK_OPEN_REDIRECT(inode)) {
++	if (SUSFS_IS_INODE_OPEN_REDIRECT(inode)) {
 +		res = susfs_open_redirect_spoof_vfs_readlink(inode, buffer, buflen);
 +		if (!res) {
 +			do_delayed_call(&done);
@@ -888,7 +888,7 @@ index 3451708fd..7395a4a0a 100644
  			   inode_mark->wd, inode->i_ino, inode->i_sb->s_dev,
  			   inotify_mark_user_mask(mark));
 diff --git a/fs/open.c b/fs/open.c
-index 39779f1ba..94b914e9c 100644
+index 39779f1ba..6b44250f1 100644
 --- a/fs/open.c
 +++ b/fs/open.c
 @@ -33,6 +33,9 @@
@@ -976,7 +976,7 @@ index 39779f1ba..94b914e9c 100644
  		struct file *f = do_filp_open(dfd, tmp, &op);
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +		if (f && !IS_ERR(f) && !is_inode_open_redirect) {
-+			if (PRE_CHECK_OPEN_REDIRECT_WITHOUT_UID_CHECK(file_inode(f))) {
++			if (SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK(file_inode(f))) {
 +				if (!susfs_open_redirect_spoof_do_sys_openat(file_inode(f), redirected_name)) {
 +					is_inode_open_redirect = true;
 +					filp_close(f, NULL);
@@ -1002,7 +1002,7 @@ index 39779f1ba..94b914e9c 100644
  	return fd;
  }
 diff --git a/fs/proc/base.c b/fs/proc/base.c
-index 7624ae2c1..9141ff44d 100644
+index 7624ae2c1..b8b4895ce 100644
 --- a/fs/proc/base.c
 +++ b/fs/proc/base.c
 @@ -100,6 +100,10 @@
@@ -1034,7 +1034,7 @@ index 7624ae2c1..9141ff44d 100644
 +		vma = find_vma(mm, addr);
 +		if (vma && vma->vm_file) {
 +			struct inode *inode = file_inode(vma->vm_file);
-+			if (PRE_CHECK_SUS_MAP(inode)) {
++			if (SUSFS_IS_INODE_SUS_MAP(inode)) {
 +				if (write) {
 +					copied = -EFAULT;
 +				} else {
@@ -1065,7 +1065,7 @@ index 7624ae2c1..9141ff44d 100644
  		return -ENOMEM;
  
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	if (PRE_CHECK_OPEN_REDIRECT(path->dentry->d_inode)) {
++	if (SUSFS_IS_INODE_OPEN_REDIRECT(path->dentry->d_inode)) {
 +		if (!susfs_open_redirect_spoof_do_proc_readlink(path->dentry->d_inode, tmp, buflen)) {
 +			len = strlen(tmp);
 +			if (copy_to_user(buffer, tmp, len))
@@ -1095,7 +1095,7 @@ index 7624ae2c1..9141ff44d 100644
  			continue;
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +		inode = file_inode(vma->vm_file);
-+		if (PRE_CHECK_SUS_MAP(inode))
++		if (SUSFS_IS_INODE_SUS_MAP(inode))
 +			continue;
 +#endif
  		if (++pos <= ctx->pos)
@@ -1126,7 +1126,7 @@ index 2e244ada1..792e1cb04 100644
  		seq_puts(m, saved_boot_config);
  	return 0;
 diff --git a/fs/proc/fd.c b/fs/proc/fd.c
-index 913bef0d2..bfefa9b10 100644
+index 913bef0d2..585fc5607 100644
 --- a/fs/proc/fd.c
 +++ b/fs/proc/fd.c
 @@ -13,17 +13,35 @@
@@ -1208,7 +1208,7 @@ index 913bef0d2..bfefa9b10 100644
 +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	if (PRE_CHECK_OPEN_REDIRECT(file_inode(file))) {
++	if (SUSFS_IS_INODE_OPEN_REDIRECT(file_inode(file))) {
 +		if (susfs_open_redirect_spoof_seq_show(file_inode(file), &mnt_id, &ino))
 +			goto orig_flow;
 +		seq_printf(m, "pos:\t%lli\nflags:\t0%o\nmnt_id:\t%i\nino:\t%lu\n",
@@ -1237,7 +1237,7 @@ index 913bef0d2..bfefa9b10 100644
  	/* show_fd_locks() never deferences files so a stale value is safe */
  	show_fd_locks(m, file, files);
 diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
-index 3823dfae5..c7b9e5aaa 100644
+index 3823dfae5..496041576 100644
 --- a/fs/proc/task_mmu.c
 +++ b/fs/proc/task_mmu.c
 @@ -21,6 +21,9 @@
@@ -1275,7 +1275,7 @@ index 3823dfae5..c7b9e5aaa 100644
  	if (file) {
  		struct inode *inode = file_inode(vma->vm_file);
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+		if (PRE_CHECK_OPEN_REDIRECT(inode)) {
++		if (SUSFS_IS_INODE_OPEN_REDIRECT(inode)) {
 +			if (!susfs_open_redirect_spoof_show_map_vma(inode, &ino, &dev, spoofed_redirected_name)) {
 +				pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
 +				goto orig_flow;
@@ -1283,7 +1283,7 @@ index 3823dfae5..c7b9e5aaa 100644
 +		}
 +#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
-+		if (PRE_CHECK_SUS_MAP(inode)) {
++		if (SUSFS_IS_INODE_SUS_MAP(inode)) {
 +			seq_setwidth(m, 25 + sizeof(void *) * 6 - 1);
 +			seq_put_hex_ll(m, NULL, vma->vm_start, 8);
 +			seq_put_hex_ll(m, "-", vma->vm_end, 8);
@@ -1340,7 +1340,7 @@ index 3823dfae5..c7b9e5aaa 100644
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +	if (vma->vm_file) {
 +		struct inode *inode = file_inode(vma->vm_file);
-+		if (PRE_CHECK_SUS_MAP(inode)) {
++		if (SUSFS_IS_INODE_SUS_MAP(inode)) {
 +			show_map_vma(m, vma);
 +			SEQ_PUT_DEC("Size:           ", vma->vm_end - vma->vm_start);
 +			SEQ_PUT_DEC(" kB\nKernelPageSize: ", vma_kernel_pagesize(vma));
@@ -1367,7 +1367,7 @@ index 3823dfae5..c7b9e5aaa 100644
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +		if (vma->vm_file) {
 +			struct inode *inode = file_inode(vma->vm_file);
-+			if (PRE_CHECK_SUS_MAP(inode)) {
++			if (SUSFS_IS_INODE_SUS_MAP(inode)) {
 +				memset(&mss, 0, sizeof(mss));
 +				goto bypass_orig_flow;
 +			}
@@ -1399,7 +1399,7 @@ index 3823dfae5..c7b9e5aaa 100644
 +		vma = find_vma(mm, start_vaddr);
 +		if (vma && vma->vm_file) {
 +			struct inode *inode = file_inode(vma->vm_file);
-+			if (PRE_CHECK_SUS_MAP(inode))
++			if (SUSFS_IS_INODE_SUS_MAP(inode))
 +				pm.buffer->pme = 0;
 +		}
 +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
@@ -1897,7 +1897,7 @@ index 357a1db41..e962cf1a8 100644
  	if (path.mnt->mnt_root == path.dentry)
  		stat->attributes |= STATX_ATTR_MOUNT_ROOT;
 diff --git a/fs/statfs.c b/fs/statfs.c
-index 2a37f9f3d..7843c3685 100644
+index 2a37f9f3d..b0294c384 100644
 --- a/fs/statfs.c
 +++ b/fs/statfs.c
 @@ -9,6 +9,10 @@
@@ -1932,7 +1932,7 @@ index 2a37f9f3d..7843c3685 100644
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +	struct inode *inode = path->dentry->d_inode;
 +
-+	if (PRE_CHECK_OPEN_REDIRECT(inode)) {
++	if (SUSFS_IS_INODE_OPEN_REDIRECT(inode)) {
 +		if (susfs_open_redirect_spoof_vfs_statfs(inode, buf))
 +			goto orig_flow;
 +		return 0;
