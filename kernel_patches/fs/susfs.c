@@ -891,17 +891,11 @@ out_copy_to_user:
 	SUSFS_LOGI("CMD_SUSFS_ADD_OPEN_REDIRECT -> ret: %d\n", info.err);
 }
 
-int susfs_open_redirect_spoof_do_sys_openat(struct inode *inode, char *out_redirected_name) {
+int susfs_open_redirect_spoof_do_sys_openat(struct inode *inode, struct filename **tmp_filename) {
 	struct st_susfs_open_redirect_hlist *entry = NULL;
+	struct filename *new_filename = NULL;
 	int srcu_idx = srcu_read_lock(&susfs_srcu_open_redirect);
 	int err = -ENOENT;
-
-	if (out_redirected_name) {
-		SUSFS_LOGE("out_filename not NULL!\n");
-		err = -EINVAL;
-		srcu_read_unlock(&susfs_srcu_open_redirect, srcu_idx);
-		goto out_srcu_read_unlock;
-	}
 
 	hash_for_each_possible_rcu(OPEN_REDIRECT_HLIST, entry, node, inode->i_ino) {
 		if (!entry->reversed_lookup_only &&
@@ -934,12 +928,14 @@ int susfs_open_redirect_spoof_do_sys_openat(struct inode *inode, char *out_redir
 			}
 			SUSFS_LOGI("redirect path '%s' to '%s', uid_scheme: %d\n",
 					entry->info.target_pathname, entry->info.redirected_pathname, entry->info.uid_scheme);
-			out_redirected_name = kstrdup(entry->info.redirected_pathname, GFP_KERNEL);
-			if (!out_redirected_name) {
+			new_filename = getname_kernel(entry->info.redirected_pathname);
+			if (IS_ERR(new_filename)) {
 				SUSFS_LOGE("no memory\n");
 				err = -ENOMEM;
 				goto out_srcu_read_unlock;
 			}
+			putname(*tmp_filename);
+			*tmp_filename = new_filename;
 			err = 0;
 			goto out_srcu_read_unlock;
 		}
