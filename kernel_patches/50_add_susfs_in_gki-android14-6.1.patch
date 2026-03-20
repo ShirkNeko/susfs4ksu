@@ -1002,7 +1002,7 @@ index 026a4047c..96a363b4b 100644
  	return fd;
  }
 diff --git a/fs/proc/base.c b/fs/proc/base.c
-index b0ec673a2..e6fdcc0e2 100644
+index b0ec673a2..3821b5992 100644
 --- a/fs/proc/base.c
 +++ b/fs/proc/base.c
 @@ -100,6 +100,10 @@
@@ -1026,7 +1026,7 @@ index b0ec673a2..e6fdcc0e2 100644
  
  	if (!mm)
  		return 0;
-@@ -932,6 +939,25 @@ static ssize_t mem_rw(struct file *file, char __user *buf,
+@@ -932,6 +939,22 @@ static ssize_t mem_rw(struct file *file, char __user *buf,
  
  	while (count > 0) {
  		size_t this_len = min_t(size_t, count, PAGE_SIZE);
@@ -1034,10 +1034,7 @@ index b0ec673a2..e6fdcc0e2 100644
 +		vma = find_vma(mm, addr);
 +		if (vma && vma->vm_file) {
 +			struct inode *inode = file_inode(vma->vm_file);
-+			if (inode->i_mapping &&
-+				unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags) &&
-+				susfs_is_current_proc_umounted_app()))
-+			{
++			if (PRE_CHECK_SUS_MAP(inode)) {
 +				if (write) {
 +					copied = -EFAULT;
 +				} else {
@@ -1052,7 +1049,7 @@ index b0ec673a2..e6fdcc0e2 100644
  
  		if (write && copy_from_user(page, buf, this_len)) {
  			copied = -EFAULT;
-@@ -1835,6 +1861,10 @@ static const char *proc_pid_get_link(struct dentry *dentry,
+@@ -1835,6 +1858,10 @@ static const char *proc_pid_get_link(struct dentry *dentry,
  	return ERR_PTR(error);
  }
  
@@ -1063,7 +1060,7 @@ index b0ec673a2..e6fdcc0e2 100644
  static int do_proc_readlink(const struct path *path, char __user *buffer, int buflen)
  {
  	char *tmp = kmalloc(PATH_MAX, GFP_KERNEL);
-@@ -1844,6 +1874,18 @@ static int do_proc_readlink(const struct path *path, char __user *buffer, int bu
+@@ -1844,6 +1871,18 @@ static int do_proc_readlink(const struct path *path, char __user *buffer, int bu
  	if (!tmp)
  		return -ENOMEM;
  
@@ -1082,7 +1079,7 @@ index b0ec673a2..e6fdcc0e2 100644
  	pathname = d_path(path, tmp, PATH_MAX);
  	len = PTR_ERR(pathname);
  	if (IS_ERR(pathname))
-@@ -2423,6 +2465,9 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
+@@ -2423,6 +2462,9 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
  	struct map_files_info *p;
  	int ret;
  	struct vma_iterator vmi;
@@ -1092,15 +1089,13 @@ index b0ec673a2..e6fdcc0e2 100644
  
  	genradix_init(&fa);
  
-@@ -2466,6 +2511,13 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
+@@ -2466,6 +2508,11 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
  	for_each_vma(vmi, vma) {
  		if (!vma->vm_file)
  			continue;
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +		inode = file_inode(vma->vm_file);
-+		if (inode->i_mapping &&
-+			unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags) &&
-+			susfs_is_current_proc_umounted_app()))
++		if (PRE_CHECK_SUS_MAP(inode))
 +			continue;
 +#endif
  		if (++pos <= ctx->pos)
@@ -1242,7 +1237,7 @@ index 913bef0d2..bfefa9b10 100644
  	/* show_fd_locks() never deferences files so a stale value is safe */
  	show_fd_locks(m, file, files);
 diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
-index d6f37ed84..08762fb47 100644
+index d6f37ed84..1c1c7fa5e 100644
 --- a/fs/proc/task_mmu.c
 +++ b/fs/proc/task_mmu.c
 @@ -21,6 +21,9 @@
@@ -1269,7 +1264,7 @@ index d6f37ed84..08762fb47 100644
  static void
  show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
  {
-@@ -284,14 +294,53 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
+@@ -284,14 +294,50 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
  	unsigned long start, end;
  	dev_t dev = 0;
  	const char *name = NULL;
@@ -1288,10 +1283,7 @@ index d6f37ed84..08762fb47 100644
 +		}
 +#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
-+		if (inode->i_mapping &&
-+			unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags) &&
-+			susfs_is_current_proc_umounted_app()))
-+		{
++		if (PRE_CHECK_SUS_MAP(inode)) {
 +			seq_setwidth(m, 25 + sizeof(void *) * 6 - 1);
 +			seq_put_hex_ll(m, NULL, vma->vm_start, 8);
 +			seq_put_hex_ll(m, "-", vma->vm_end, 8);
@@ -1323,7 +1315,7 @@ index d6f37ed84..08762fb47 100644
  	start = vma->vm_start;
  	end = VMA_PAD_START(vma);
  	show_vma_header_prefix(m, start, end, flags, pgoff, dev, ino);
-@@ -300,6 +349,17 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
+@@ -300,6 +346,17 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
  	 * Print the dentry name for named mappings, and a
  	 * special [heap] marker for the heap:
  	 */
@@ -1341,17 +1333,14 @@ index d6f37ed84..08762fb47 100644
  	if (file) {
  		seq_pad(m, ' ');
  		seq_file_path(m, file, "\n");
-@@ -888,6 +948,29 @@ static int show_smap(struct seq_file *m, void *v)
+@@ -888,6 +945,26 @@ static int show_smap(struct seq_file *m, void *v)
  	if (!vma_pages(vma))
  		goto show_pad;
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +	if (vma->vm_file) {
 +		struct inode *inode = file_inode(vma->vm_file);
-+		if (inode->i_mapping &&
-+			unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags) &&
-+			susfs_is_current_proc_umounted_app()))
-+		{
++		if (PRE_CHECK_SUS_MAP(inode)) {
 +			show_map_vma(m, vma);
 +			SEQ_PUT_DEC("Size:           ", vma->vm_end - vma->vm_start);
 +			SEQ_PUT_DEC(" kB\nKernelPageSize: ", vma_kernel_pagesize(vma));
@@ -1371,17 +1360,14 @@ index d6f37ed84..08762fb47 100644
  	smap_gather_stats(vma, &mss, 0);
  
  	show_map_vma(m, vma);
-@@ -945,7 +1028,23 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
+@@ -945,7 +1022,20 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
  
  	vma_start = vma->vm_start;
  	do {
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +		if (vma->vm_file) {
 +			struct inode *inode = file_inode(vma->vm_file);
-+			if (inode->i_mapping &&
-+				unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags) &&
-+				susfs_is_current_proc_umounted_app()))
-+			{
++			if (PRE_CHECK_SUS_MAP(inode)) {
 +				memset(&mss, 0, sizeof(mss));
 +				goto bypass_orig_flow;
 +			}
@@ -1395,7 +1381,7 @@ index d6f37ed84..08762fb47 100644
  		last_vma_end = vma->vm_end;
  
  		/*
-@@ -1696,6 +1795,9 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
+@@ -1696,6 +1786,9 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
  	unsigned long start_vaddr;
  	unsigned long end_vaddr;
  	int ret = 0, copied = 0;
@@ -1405,7 +1391,7 @@ index d6f37ed84..08762fb47 100644
  
  	if (!mm || !mmget_not_zero(mm))
  		goto out;
-@@ -1751,6 +1853,18 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
+@@ -1751,6 +1844,14 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
  		if (ret)
  			goto out_free;
  		ret = walk_page_range(mm, start_vaddr, end, &pagemap_ops, &pm);
@@ -1413,12 +1399,8 @@ index d6f37ed84..08762fb47 100644
 +		vma = find_vma(mm, start_vaddr);
 +		if (vma && vma->vm_file) {
 +			struct inode *inode = file_inode(vma->vm_file);
-+			if (inode->i_mapping &&
-+				unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags) &&
-+				susfs_is_current_proc_umounted_app()))
-+			{
++			if (PRE_CHECK_SUS_MAP(inode))
 +				pm.buffer->pme = 0;
-+			}
 +		}
 +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
  		mmap_read_unlock(mm);
