@@ -1261,7 +1261,7 @@ index 6b634c0a9..f63ee8287 100644
  	show_fd_locks(m, file, files);
  	if (seq_has_overflowed(m))
 diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
-index 839b6d686..b932acbe9 100644
+index 839b6d686..2bea5c27c 100644
 --- a/fs/proc/task_mmu.c
 +++ b/fs/proc/task_mmu.c
 @@ -20,6 +20,9 @@
@@ -1279,7 +1279,7 @@ index 839b6d686..b932acbe9 100644
  }
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+extern void susfs_show_map_vma_spoofer(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);
++extern void susfs_sus_kstat_spoof_show_map_vma(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);
 +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +extern int susfs_open_redirect_spoof_show_map_vma(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char *spoofed_name);
@@ -1331,7 +1331,7 @@ index 839b6d686..b932acbe9 100644
  		ino = inode->i_ino;
  		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+		susfs_show_map_vma_spoofer(inode, &dev, &ino);
++		susfs_sus_kstat_spoof_show_map_vma(inode, &dev, &ino);
 +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
  	}
  
@@ -1800,7 +1800,7 @@ index 09e8ed7d4..419947280 100644
  	if (error >= 0)
  		error = buf.error;
 diff --git a/fs/stat.c b/fs/stat.c
-index c6a2e1098..c24c557e7 100644
+index c6a2e1098..01431b32a 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
 @@ -17,6 +17,10 @@
@@ -1819,7 +1819,7 @@ index c6a2e1098..c24c557e7 100644
  #include "mount.h"
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+extern void susfs_generic_fillattr_spoofer(struct inode *inode, struct kstat *stat);
++extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat);
 +#endif
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +extern int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt);
@@ -1833,7 +1833,7 @@ index c6a2e1098..c24c557e7 100644
  	stat->blksize = i_blocksize(inode);
  	stat->blocks = inode->i_blocks;
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+	susfs_generic_fillattr_spoofer(inode, stat);
++	susfs_sus_kstat_spoof_generic_fillattr(inode, stat);
 +#endif
  }
  EXPORT_SYMBOL_NS(generic_fillattr, ANDROID_GKI_VFS_EXPORT_ONLY);
@@ -1847,7 +1847,7 @@ index c6a2e1098..c24c557e7 100644
 +		int err = inode->i_op->getattr(path, stat, request_mask,
 +					    query_flags);
 +		if (!err)
-+			susfs_generic_fillattr_spoofer(inode, stat);
++			susfs_sus_kstat_spoof_generic_fillattr(inode, stat);
 +		return err;
 +	}
 +#else
