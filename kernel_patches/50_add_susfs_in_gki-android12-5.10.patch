@@ -907,7 +907,7 @@ index 765b50aea..4f764ffed 100644
  			   inode_mark->wd, inode->i_ino, inode->i_sb->s_dev,
  			   inotify_mark_user_mask(mark));
 diff --git a/fs/open.c b/fs/open.c
-index ee284a930..f583d83e1 100644
+index ee284a930..642563be6 100644
 --- a/fs/open.c
 +++ b/fs/open.c
 @@ -32,6 +32,9 @@
@@ -953,12 +953,12 @@ index ee284a930..f583d83e1 100644
  	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
  		return -EINVAL;
  
-@@ -1198,23 +1220,47 @@ struct file *file_open_root(struct dentry *dentry, struct vfsmount *mnt,
+@@ -1198,12 +1220,20 @@ struct file *file_open_root(struct dentry *dentry, struct vfsmount *mnt,
  }
  EXPORT_SYMBOL(file_open_root);
  
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+extern int susfs_open_redirect_spoof_do_sys_openat(struct inode *inode, struct filename **tmp_filename);
++extern struct filename *susfs_open_redirect_spoof_do_sys_openat(struct inode *inode);
 +#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +
  static long do_sys_openat2(int dfd, const char __user *filename,
@@ -968,30 +968,32 @@ index ee284a930..f583d83e1 100644
  	int fd = build_open_flags(how, &op);
  	struct filename *tmp;
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++	struct filename *fake_filename = NULL;
 +	bool is_inode_open_redirect = false;
 +#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
  
  	if (fd)
  		return fd;
- 
- 	tmp = getname(filename);
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+retry:
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
- 	if (IS_ERR(tmp))
+@@ -1213,8 +1243,28 @@ static long do_sys_openat2(int dfd, const char __user *filename,
  		return PTR_ERR(tmp);
  
  	fd = get_unused_fd_flags(how->flags);
++#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++retry:
++#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
  	if (fd >= 0) {
  		struct file *f = do_filp_open(dfd, tmp, &op);
 +
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+		if (f && !IS_ERR(f) && !is_inode_open_redirect) {
-+			if (SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK(file_inode(f))) {
-+				if (!susfs_open_redirect_spoof_do_sys_openat(file_inode(f), &tmp)) {
++		if (!is_inode_open_redirect && f && !IS_ERR(f)) {
++			struct inode *inode = file_inode(f);
++			if (SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK(inode)) {
++				fake_filename = susfs_open_redirect_spoof_do_sys_openat(inode);
++				if (fake_filename && !IS_ERR(fake_filename)) {
 +					is_inode_open_redirect = true;
 +					filp_close(f, NULL);
-+					put_unused_fd(fd);
++					putname(tmp);
++					tmp = fake_filename;
 +					goto retry;
 +				}
 +			}
@@ -1002,14 +1004,14 @@ index ee284a930..f583d83e1 100644
  			put_unused_fd(fd);
  			fd = PTR_ERR(f);
 diff --git a/fs/proc/base.c b/fs/proc/base.c
-index d0884f38c..3af66efa6 100644
+index d0884f38c..31044a71f 100644
 --- a/fs/proc/base.c
 +++ b/fs/proc/base.c
 @@ -99,6 +99,10 @@
  #include <linux/time_namespace.h>
  #include <linux/resctrl.h>
  #include <linux/cpufreq_times.h>
-+#if defined(CONFIG_KSU_SUSFS_SUS_MAP) && defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
++#if defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
 +#include <linux/susfs_def.h>
 +#endif
 +
