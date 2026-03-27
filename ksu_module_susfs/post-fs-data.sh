@@ -50,13 +50,16 @@ cat <<EOF >/dev/null
 ${SUSFS_BIN} set_uname '5.15.137-android14-11-gb572b1fac135-ab11919372' '#1 SMP PREEMPT Mon Jun 3 16:35:10 UTC 2024'
 EOF
 
-#### Redirect path, effective for processes with uid < 2000 ####
-# redirect hosts file to other hosts file somewhere else #
+#### Redirect opened target path to user-defined path ####
+# Please be reminded the following #
+# 1. Both target_pathname and redirected_pathname must be existed before they can be added to kernel.
+# 2. Users have to take care of the selinux permission for both target_pathname and redirected_pathname by themselves first.
 cat <<EOF >/dev/null
-# First make sure you setup proper permission and selinux for your redirected file #
+## Set the permission of the redirected path first ##
 susfs_clone_perm '/data/local/tmp/my_hosts' '/system/etc/hosts'
-# And then add them via 'add_path_redirect'
-${SUSFS_BIN} add_path_redirect '/system/etc/hosts' '/data/local/tmp/my_hosts'
+## Now add the target path and redirected path with pre-defined uid scheme to kernel ##
+## Run 'ksu_susfs add_open_redirect' for more details of <uid_scheme> ##
+${SUSFS_BIN} add_open_redirect '/system/etc/hosts' '/data/local/tmp/my_hosts' '0'
 EOF
 
 #### Spoof /proc/cmdline or /proc/bootconfig, effective for all processes ####
