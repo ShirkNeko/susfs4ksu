@@ -1,9 +1,9 @@
 diff --git a/kernel/Kbuild b/kernel/Kbuild
-index 5212f419..01d3382d 100644
+index 08e273b1..973560e2 100644
 --- a/kernel/Kbuild
 +++ b/kernel/Kbuild
-@@ -3,18 +3,7 @@ kernelsu-objs := core/init.o
- kernelsu-objs += feature/kernel_umount.o
+@@ -4,18 +4,7 @@ kernelsu-objs += feature/kernel_umount.o
+ kernelsu-objs += feature/sulog.o
  kernelsu-objs += feature/sucompat.o
  
 -kernelsu-objs += hook/lsm_hook.o
@@ -20,7 +20,7 @@ index 5212f419..01d3382d 100644
 -endif
  
  kernelsu-objs += infra/file_wrapper.o
- kernelsu-objs += infra/seccomp_cache.o
+ kernelsu-objs += infra/event_queue.o
 diff --git a/kernel/Kconfig b/kernel/Kconfig
 index c7701661..5c169f59 100644
 --- a/kernel/Kconfig
@@ -149,10 +149,10 @@ index 068476e0..8590d1ec 100644
 +
  # Keep a new line here!! Because someone may append config
 diff --git a/kernel/core/init.c b/kernel/core/init.c
-index 2e1f13a7..e999a0b0 100644
+index 31baad20..0c58b69f 100644
 --- a/kernel/core/init.c
 +++ b/kernel/core/init.c
-@@ -6,29 +6,22 @@
+@@ -6,6 +6,7 @@
  #include <linux/sched.h>
  #include <linux/workqueue.h>
  #include <linux/moduleparam.h>
@@ -160,17 +160,16 @@ index 2e1f13a7..e999a0b0 100644
  
  #include "policy/allowlist.h"
  #include "policy/app_profile.h"
- #include "policy/feature.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
+@@ -13,7 +14,6 @@
+ #include "klog.h" // IWYU pragma: keep
  #include "manager/manager_observer.h"
  #include "manager/throne_tracker.h"
 -#include "hook/syscall_hook_manager.h"
  #include "runtime/ksud.h"
  #include "runtime/ksud_boot.h"
- #include "supercall/supercall.h"
--#include "ksu.h"
-+#include "include/ksu.h"
+ #include "feature/sulog.h"
+@@ -21,15 +21,8 @@
+ #include "ksu.h"
  #include "infra/file_wrapper.h"
  #include "selinux/selinux.h"
 -#include "hook/syscall_hook.h"
@@ -187,7 +186,7 @@ index 2e1f13a7..e999a0b0 100644
  
  // workaround for A12-5.10 kernel
  // Some third-party kernel (e.g. linegaeOS) uses wrong toolchain, which supports
-@@ -66,7 +59,6 @@ __attribute__((naked)) int __init kernelsu_init_early(void)
+@@ -67,7 +60,6 @@ __attribute__((naked)) int __init kernelsu_init_early(void)
  #endif
  
  struct cred *ksu_cred;
@@ -195,7 +194,7 @@ index 2e1f13a7..e999a0b0 100644
  
  #ifdef CONFIG_KSU_DEBUG
  bool allow_shell = true;
-@@ -77,28 +69,6 @@ module_param(allow_shell, bool, 0);
+@@ -78,28 +70,6 @@ module_param(allow_shell, bool, 0);
  
  int __init kernelsu_init(void)
  {
@@ -224,13 +223,14 @@ index 2e1f13a7..e999a0b0 100644
  #ifdef CONFIG_KSU_DEBUG
      pr_alert("*************************************************************");
      pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
-@@ -117,72 +87,38 @@ int __init kernelsu_init(void)
+@@ -118,53 +88,25 @@ int __init kernelsu_init(void)
          pr_err("prepare cred failed!\n");
      }
  
 -    ksu_syscall_hook_init();
 -
      ksu_feature_init();
+-    ksu_sulog_init();
  
      ksu_supercalls_init();
  
@@ -240,25 +240,22 @@ index 2e1f13a7..e999a0b0 100644
 -        apply_kernelsu_rules();
 -        cache_sid();
 -        setup_ksu_cred();
-+    ksu_setuid_hook_init();
- 
+-
 -        // Grant current process (ksud late-load) root
 -        // with KSU SELinux domain before enforcing SELinux, so it
 -        // can continue to access /data/app etc. after enforcement.
 -        escape_to_root_for_init();
-+    ksu_sucompat_init();
- 
+-
 -        ksu_allowlist_init();
 -        ksu_load_allow_list();
-+    ksu_allowlist_init();
- 
+-
 -        ksu_syscall_hook_manager_init();
-+    ksu_throne_tracker_init();
++    ksu_sucompat_init();
  
 -        ksu_throne_tracker_init();
 -        ksu_observer_init();
 -        ksu_file_wrapper_init();
-+    ksu_ksud_init();
++    ksu_setuid_hook_init();
  
 -        ksu_boot_completed = true;
 -        track_throne(false);
@@ -267,32 +264,29 @@ index 2e1f13a7..e999a0b0 100644
 -            pr_info("Permissive SELinux, enforcing\n");
 -            setenforce(true);
 -        }
--
++    ksu_sulog_init();
+ 
 -    } else {
 -        ksu_syscall_hook_manager_init();
--
++    ksu_allowlist_init();
+ 
 -        ksu_allowlist_init();
--
++    ksu_throne_tracker_init();
+ 
 -        ksu_throne_tracker_init();
--
++    ksu_ksud_init();
+ 
 -        ksu_ksud_init();
--
++    ksu_file_wrapper_init();
+ 
 -        ksu_file_wrapper_init();
 -    }
-+    ksu_file_wrapper_init();
++    susfs_init();
  
  #ifdef MODULE
  #ifndef CONFIG_KSU_DEBUG
-     kobject_del(&THIS_MODULE->mkobj.kobj);
- #endif
- #endif
-+
-+    susfs_init();
-+
-     return 0;
- }
+@@ -176,18 +118,12 @@ int __init kernelsu_init(void)
  
- extern void ksu_observer_exit(void);
  void kernelsu_exit(void)
  {
 -    // Phase 1: Stop all hooks first to prevent new callbacks
@@ -306,25 +300,15 @@ index 2e1f13a7..e999a0b0 100644
      // Wait for any in-flight RCU readers (e.g. handler traversing allow_list)
      synchronize_rcu();
  
+-    // Phase 2: Now safe to release data structures
++    // Now safe to release data structures
+     ksu_observer_exit();
+ 
+     ksu_throne_tracker_exit();
 diff --git a/kernel/feature/kernel_umount.c b/kernel/feature/kernel_umount.c
-index 00793a9a..ff249569 100644
+index 00793a9a..74b81ab0 100644
 --- a/kernel/feature/kernel_umount.c
 +++ b/kernel/feature/kernel_umount.c
-@@ -11,12 +11,12 @@
- #include <linux/types.h>
- 
- #include "feature/kernel_umount.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
- #include "policy/allowlist.h"
- #include "selinux/selinux.h"
- #include "policy/feature.h"
- #include "runtime/ksud_boot.h"
--#include "ksu.h"
-+#include "include/ksu.h"
- 
- static bool ksu_kernel_umount_enabled = true;
- 
 @@ -87,29 +87,6 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
          return 0;
      }
@@ -356,26 +340,26 @@ index 00793a9a..ff249569 100644
      pr_info("handle umount for uid: %d, pid: %d\n", new_uid, current->pid);
  
 diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
-index f2e9ebd3..aa805adb 100644
+index c96719da..fbc6e03c 100644
 --- a/kernel/feature/sucompat.c
 +++ b/kernel/feature/sucompat.c
-@@ -11,18 +11,25 @@
+@@ -11,6 +11,11 @@
  #include <linux/version.h>
  #include <linux/sched/task_stack.h>
  #include <linux/ptrace.h>
 +#include <linux/susfs_def.h>
 +#include <linux/namei.h>
++#include <linux/minmax.h>
 +#include "selinux/selinux.h"
 +#include "objsec.h"
  
+ #include "arch.h"
  #include "policy/allowlist.h"
- #include "policy/feature.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
- #include "runtime/ksud.h"
- #include "feature/sucompat.h"
+@@ -21,10 +26,15 @@
  #include "policy/app_profile.h"
--#include "hook/syscall_hook.h"
+ #include "hook/syscall_hook.h"
+ #include "sulog/event.h"
++#include "uapi/sulog.h"
  
  #define SU_PATH "/system/bin/su"
  #define SH_PATH "/system/bin/sh"
@@ -387,101 +371,154 @@ index f2e9ebd3..aa805adb 100644
  bool ksu_su_compat_enabled __read_mostly = true;
  
  static int su_compat_feature_get(u64 *value)
-@@ -69,98 +76,137 @@ static char __user *ksud_user_path(void)
+@@ -71,112 +81,192 @@ static char __user *ksud_user_path(void)
      return userspace_stack_buffer(ksud_path, sizeof(ksud_path));
  }
  
 -int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *__unused_flags)
++static const char __user *get_user_arg_ptr(struct user_arg_ptr argv, int nr)
+ {
+-    const char su[] = SU_PATH;
++	const char __user *native;
+ 
+-    if (!ksu_is_allow_uid_for_current(current_uid().val)) {
+-        return 0;
+-    }
++#ifdef CONFIG_COMPAT
++	if (unlikely(argv.is_compat)) {
++		compat_uptr_t compat;
+ 
+-    char path[sizeof(su) + 1];
+-    memset(path, 0, sizeof(path));
+-    strncpy_from_user_nofault(path, *filename_user, sizeof(path));
++		if (get_user(compat, argv.ptr.compat + nr))
++			return ERR_PTR(-EFAULT);
+ 
+-    if (unlikely(!memcmp(path, su, sizeof(su)))) {
+-        pr_info("faccessat su->sh!\n");
+-        *filename_user = sh_user_path();
+-    }
++		return compat_ptr(compat);
++	}
++#endif
+ 
+-    return 0;
++	if (get_user(native, argv.ptr.native + nr))
++		return ERR_PTR(-EFAULT);
++
++	return native;
+ }
+ 
+-int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
 +/*
 + * return 0 -> No further checks should be required afterwards
-+ * return 1 -> Further checks should be continued afterwards
++ * return non-zero -> Further checks should be continued afterwards
 + */
-+int ksu_handle_execveat_init(struct filename *filename) {
++int ksu_handle_execveat_init(struct filename *filename, struct user_arg_ptr *argv_user) {
 +    if (current->pid != 1 && is_init(get_current_cred())) {
 +        if (unlikely(strcmp(filename->name, KSUD_PATH) == 0)) {
++            char tmp_filename[SUSFS_MAX_LEN_PATHNAME] = {0};
++            const char __user *argv_user_ptr = get_user_arg_ptr(*argv_user, 0);
++            struct ksu_sulog_pending_event *pending_sucompat = NULL;
++            int ret;
++
 +            pr_info("hook_manager: escape to root for init executing ksud: %d\n", current->pid);
-+            escape_to_root_for_init();
++            ret = escape_to_root_for_init();
++            if (ret) {
++                pr_err("escape_to_root_for_init() failed: %d\n", ret);
++                return ret;
++            }
++            if (!argv_user_ptr || IS_ERR(argv_user_ptr)) {
++                pr_err("!argv_user_ptr || IS_ERR(argv_user_ptr)\n");
++                return -EFAULT;
++            }
++            strncpy(tmp_filename, filename->name, SUSFS_MAX_LEN_PATHNAME - 1);
++            pending_sucompat = ksu_sulog_capture_sucompat(tmp_filename, argv_user, GFP_KERNEL);
++            ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
++            return 0;
 +        } else if (likely(strstr(filename->name, "/app_process") == NULL &&
 +                    strstr(filename->name, "/adbd") == NULL) &&
 +                    !susfs_is_current_proc_umounted())
 +        {
 +            pr_info("susfs: mark no sucompat checks for pid: '%d', exec: '%s'\n", current->pid, filename->name);
 +            susfs_set_current_proc_umounted();
++            return 0;
 +        }
-+        return 0;
++        return -EINVAL;
 +    }
-+    return 1;
++    return -EINVAL;
 +}
 +
 +// the call from execve_handler_pre won't provided correct value for __never_use_argument, use them after fix execve_handler_pre, keeping them for consistence for manually patched code
 +int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
-+                 void *__never_use_argv, void *__never_use_envp,
++                 void *argv_user, void *__never_use_envp,
 +                 int *__never_use_flags)
  {
+-    // const char sh[] = SH_PATH;
 -    const char su[] = SU_PATH;
 +    struct filename *filename;
++    char tmp_filename[SUSFS_MAX_LEN_PATHNAME] = {0};
++    const char __user *argv_user_ptr = get_user_arg_ptr(*((struct user_arg_ptr*)argv_user), 0);
++    struct ksu_sulog_pending_event *pending_sucompat = NULL;
++    int ret;
  
 -    if (!ksu_is_allow_uid_for_current(current_uid().val)) {
 +    if (unlikely(!filename_ptr))
++        return 0;
++
++    filename = *filename_ptr;
++    if (IS_ERR(filename))
          return 0;
 -    }
  
--    char path[sizeof(su) + 1];
--    memset(path, 0, sizeof(path));
--    strncpy_from_user_nofault(path, *filename_user, sizeof(path));
-+    filename = *filename_ptr;
-+    if (IS_ERR(filename)) {
+-    if (unlikely(!filename_user)) {
++    if (!ksu_handle_execveat_init(filename, (struct user_arg_ptr*)argv_user))
 +        return 0;
-+    }
- 
--    if (unlikely(!memcmp(path, su, sizeof(su)))) {
--        pr_info("faccessat su->sh!\n");
--        *filename_user = sh_user_path();
-+    if (!ksu_handle_execveat_init(filename)) {
-+        return 0;
-     }
- 
++
 +    if (likely(memcmp(filename->name, su_path, sizeof(su_path))))
 +        return 0;
 +
 +    pr_info("ksu_handle_execveat_sucompat: su found\n");
++
 +    memcpy((void *)filename->name, ksud_path, sizeof(ksud_path));
 +
-+    escape_with_root_profile();
++    ret = escape_with_root_profile();
++    if (ret)
++        pr_err("escape_with_root_profile() failed: %d\n", ret);
 +
-     return 0;
- }
- 
--int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
-+int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
-+            void *envp, int *flags)
- {
--    // const char sh[] = SH_PATH;
--    const char su[] = SU_PATH;
--
--    if (!ksu_is_allow_uid_for_current(current_uid().val)) {
-+    if (ksu_handle_execveat_ksud(fd, filename_ptr, argv, envp, flags)) {
++    if (!argv_user_ptr || IS_ERR(argv_user_ptr)) {
++        pr_err("!argv_user_ptr || IS_ERR(argv_user_ptr)\n");
          return 0;
      }
-+    return ksu_handle_execveat_sucompat(fd, filename_ptr, argv, envp,
-+                        flags);
-+}
- 
--    if (unlikely(!filename_user)) {
--        return 0;
--    }
-+int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
-+             int *__unused_flags)
-+{
-+    char path[sizeof(su_path) + 1] = {0};
  
 -    char path[sizeof(su) + 1];
 -    memset(path, 0, sizeof(path));
 -    strncpy_from_user_nofault(path, *filename_user, sizeof(path));
-+    strncpy_from_user(path, *filename_user, sizeof(path));
++    strncpy(tmp_filename, filename->name, SUSFS_MAX_LEN_PATHNAME - 1);
++    pending_sucompat = ksu_sulog_capture_sucompat(tmp_filename, (struct user_arg_ptr*)argv_user, GFP_KERNEL);
++    ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
++    return 0;
++}
  
 -    if (unlikely(!memcmp(path, su, sizeof(su)))) {
 -        pr_info("newfstatat su->sh!\n");
++int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
++            void *envp, int *flags)
++{
++    if (ksu_handle_execveat_ksud(fd, filename_ptr, argv, envp, flags))
++        return 0;
++
++    return ksu_handle_execveat_sucompat(fd, filename_ptr, argv, envp,
++                        flags);
++}
++
++int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
++             int *__unused_flags)
++{
++    char path[sizeof(su_path) + 1] = {0};
++
++    strncpy_from_user(path, *filename_user, sizeof(path));
++
 +    if (unlikely(!memcmp(path, su_path, sizeof(su_path)))) {
 +        pr_info("ksu_handle_faccessat: su->sh!\n");
          *filename_user = sh_user_path();
@@ -494,20 +531,20 @@ index f2e9ebd3..aa805adb 100644
 -{
 -    const char su[] = SU_PATH;
 -    const char __user *fn;
+-    const char __user *const __user *argv_user = (const char __user *const __user *)PT_REGS_PARM2(regs);
+-    struct ksu_sulog_pending_event *pending_sucompat = NULL;
 -    char path[sizeof(su) + 1];
 -    long ret;
 -    unsigned long addr;
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
 +int ksu_handle_stat(int *dfd, struct filename **filename, int *flags) {
-+    if (unlikely(IS_ERR(*filename) || (*filename)->name == NULL)) {
++    if (unlikely(IS_ERR(*filename) || (*filename)->name == NULL))
 +        return 0;
-+    }
  
 -    if (unlikely(!filename_user))
 -        goto do_orig_execve;
-+    if (likely(memcmp((*filename)->name, su_path, sizeof(su_path)))) {
++    if (likely(memcmp((*filename)->name, su_path, sizeof(su_path))))
 +        return 0;
-+    }
  
 -    if (!ksu_is_allow_uid_for_current(current_uid().val))
 -        goto do_orig_execve;
@@ -518,9 +555,8 @@ index f2e9ebd3..aa805adb 100644
 +#else
 +int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
 +{
-+    if (unlikely(!filename_user)) {
++    if (unlikely(!filename_user))
 +        return 0;
-+    }
  
 -    addr = untagged_addr((unsigned long)*filename_user);
 -    fn = (const char __user *)addr;
@@ -545,6 +581,7 @@ index f2e9ebd3..aa805adb 100644
 +#endif // #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
  
 -    pr_info("sys_execve su found\n");
+-    pending_sucompat = ksu_sulog_capture_sucompat(*filename_user, argv_user, GFP_KERNEL);
 -    *filename_user = ksud_user_path();
 +int ksu_handle_devpts(struct inode *inode)
 +{
@@ -554,6 +591,7 @@ index f2e9ebd3..aa805adb 100644
 -    ret = escape_with_root_profile();
 -    if (ret) {
 -        pr_err("escape_with_root_profile failed: %ld\n", ret);
+-        ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
 -        goto do_orig_execve;
 -    }
 +    uid_t uid = current_uid().val;
@@ -564,17 +602,18 @@ index f2e9ebd3..aa805adb 100644
 -    ret = ksu_syscall_table[orig_nr](regs);
 -    if (ret < 0) {
 -        pr_err("failed to execve ksud as su: %ld, fallback to sh\n", ret);
+-        ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
 -        *filename_user = sh_user_path();
 -    } else {
+-        ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
 -        return ret;
 +    if (!__ksu_is_allow_uid_for_current(uid))
 +        return 0;
 +
 +    if (ksu_file_sid) {
 +        struct inode_security_struct *sec = selinux_inode(inode);
-+        if (sec) {
++        if (sec)
 +            sec->sid = ksu_file_sid;
-+        }
      }
  
 -do_orig_execve:
@@ -583,6 +622,15 @@ index f2e9ebd3..aa805adb 100644
  }
  
  // sucompat: permitted process can execute 'su' to gain root access.
+ void ksu_sucompat_init()
+ {
+-    if (ksu_register_feature_handler(&su_compat_handler)) {
++    if (ksu_register_feature_handler(&su_compat_handler))
+         pr_err("Failed to register su_compat feature handler\n");
+-    }
+ }
+ 
+ void ksu_sucompat_exit()
 diff --git a/kernel/feature/sucompat.h b/kernel/feature/sucompat.h
 index 1afba60f..ebee691b 100644
 --- a/kernel/feature/sucompat.h
@@ -600,52 +648,11 @@ index 1afba60f..ebee691b 100644
  
  #endif
 \ No newline at end of file
-diff --git a/kernel/hook/arm64/patch_memory.c b/kernel/hook/arm64/patch_memory.c
-index 24ee0ea3..929a8087 100644
---- a/kernel/hook/arm64/patch_memory.c
-+++ b/kernel/hook/arm64/patch_memory.c
-@@ -6,7 +6,7 @@
- #ifdef __aarch64__
- 
- #include "../patch_memory.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
- #include "linux/cpumask.h"
- #include "linux/gfp.h" // IWYU pragma: keep
- #include "linux/uaccess.h"
-diff --git a/kernel/hook/arm64/syscall_hook.c b/kernel/hook/arm64/syscall_hook.c
-index cc9fe162..338564bc 100644
---- a/kernel/hook/arm64/syscall_hook.c
-+++ b/kernel/hook/arm64/syscall_hook.c
-@@ -7,8 +7,8 @@
- #include <asm/cacheflush.h>
- #include "infra/symbol_resolver.h"
- #include "../patch_memory.h"
--#include "arch.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/arch.h"
-+#include "include/klog.h" // IWYU pragma: keep
- 
- syscall_fn_t *ksu_syscall_table = NULL;
- int ksu_dispatcher_nr = -1;
-diff --git a/kernel/hook/lsm_hook.c b/kernel/hook/lsm_hook.c
-index c4c72b38..bf6a8281 100644
---- a/kernel/hook/lsm_hook.c
-+++ b/kernel/hook/lsm_hook.c
-@@ -9,7 +9,7 @@
- #include "infra/symbol_resolver.h"
- #include "hook/lsm_hook.h"
- #include "hook/patch_memory.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
- 
- struct ksu_lsm_hook_entry {
-     struct ksu_lsm_hook *hook;
 diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
-index 5ed96607..9f875c25 100644
+index 5ed96607..6560e5e1 100644
 --- a/kernel/hook/setuid_hook.c
 +++ b/kernel/hook/setuid_hook.c
-@@ -11,26 +11,69 @@
+@@ -11,6 +11,8 @@
  #include <linux/types.h>
  #include <linux/uaccess.h>
  #include <linux/uidgid.h>
@@ -654,8 +661,7 @@ index 5ed96607..9f875c25 100644
  
  #include "policy/allowlist.h"
  #include "hook/setuid_hook.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
+@@ -18,19 +20,60 @@
  #include "manager/manager_identity.h"
  #include "infra/seccomp_cache.h"
  #include "supercall/supercall.h"
@@ -767,77 +773,6 @@ index 3a3dfea8..b8486238 100644
 -int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid);
 -
  #endif
-diff --git a/kernel/hook/syscall_event_bridge.c b/kernel/hook/syscall_event_bridge.c
-index 853e6b2f..44e7f75c 100644
---- a/kernel/hook/syscall_event_bridge.c
-+++ b/kernel/hook/syscall_event_bridge.c
-@@ -7,8 +7,8 @@
- #include <linux/ptrace.h>
- #include <linux/static_key.h>
- 
--#include "arch.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/arch.h"
-+#include "include/klog.h" // IWYU pragma: keep
- #include "hook/tp_marker.h"
- #include "feature/sucompat.h"
- #include "hook/setuid_hook.h"
-diff --git a/kernel/hook/syscall_hook_manager.c b/kernel/hook/syscall_hook_manager.c
-index b7297aa6..f1d77d97 100644
---- a/kernel/hook/syscall_hook_manager.c
-+++ b/kernel/hook/syscall_hook_manager.c
-@@ -7,8 +7,8 @@
- #include <linux/slab.h>
- #include <trace/events/syscalls.h>
- 
--#include "arch.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/arch.h"
-+#include "include/klog.h" // IWYU pragma: keep
- #include "hook/syscall_hook_manager.h"
- #include "hook/tp_marker.h"
- #include "feature/sucompat.h"
-diff --git a/kernel/hook/tp_marker.c b/kernel/hook/tp_marker.c
-index c78bbbdd..c9987215 100644
---- a/kernel/hook/tp_marker.c
-+++ b/kernel/hook/tp_marker.c
-@@ -7,7 +7,7 @@
- #include <linux/sched/task.h>
- 
- #include "policy/allowlist.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
- #include "selinux/selinux.h"
- 
- // Tracepoint registration count management
-diff --git a/kernel/hook/x86_64/patch_memory.c b/kernel/hook/x86_64/patch_memory.c
-index 51660ba4..62459039 100644
---- a/kernel/hook/x86_64/patch_memory.c
-+++ b/kernel/hook/x86_64/patch_memory.c
-@@ -7,7 +7,7 @@
- 
- #include <linux/cache.h>
- #include "../patch_memory.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
- #include <linux/cpumask.h>
- #include <linux/gfp.h> // IWYU pragma: keep
- #include <linux/uaccess.h>
-diff --git a/kernel/hook/x86_64/syscall_hook.c b/kernel/hook/x86_64/syscall_hook.c
-index d37d7eea..32db7a60 100644
---- a/kernel/hook/x86_64/syscall_hook.c
-+++ b/kernel/hook/x86_64/syscall_hook.c
-@@ -7,8 +7,8 @@
- #include <asm/cacheflush.h>
- #include "infra/symbol_resolver.h"
- #include "../patch_memory.h"
--#include "arch.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/arch.h"
-+#include "include/klog.h" // IWYU pragma: keep
- 
- sys_call_ptr_t *ksu_syscall_table = NULL;
- int ksu_dispatcher_nr = -1;
 diff --git a/kernel/include/ksu.h b/kernel/include/ksu.h
 index 17f9b826..be81e626 100644
 --- a/kernel/include/ksu.h
@@ -850,128 +785,12 @@ index 17f9b826..be81e626 100644
  extern bool allow_shell;
  
  static inline int startswith(char *s, char *prefix)
-diff --git a/kernel/infra/file_wrapper.c b/kernel/infra/file_wrapper.c
-index 53b2d76d..be63a6e9 100644
---- a/kernel/infra/file_wrapper.c
-+++ b/kernel/infra/file_wrapper.c
-@@ -15,7 +15,7 @@
- 
- #include "objsec.h"
- 
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
- #include "selinux/selinux.h"
- 
- #include "infra/file_wrapper.h"
-diff --git a/kernel/infra/seccomp_cache.c b/kernel/infra/seccomp_cache.c
-index a9d2b634..3aaa1568 100644
---- a/kernel/infra/seccomp_cache.c
-+++ b/kernel/infra/seccomp_cache.c
-@@ -5,7 +5,7 @@
- #include <linux/uaccess.h>
- #include <linux/filter.h>
- #include <linux/seccomp.h>
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
- #include "infra/seccomp_cache.h"
- 
- struct action_cache {
-diff --git a/kernel/infra/su_mount_ns.c b/kernel/infra/su_mount_ns.c
-index be2b5a47..ee6ab5b8 100644
---- a/kernel/infra/su_mount_ns.c
-+++ b/kernel/infra/su_mount_ns.c
-@@ -15,9 +15,9 @@
- #include <linux/version.h>
- #include <uapi/linux/mount.h>
- 
--#include "arch.h"
--#include "klog.h" // IWYU pragma: keep
--#include "ksu.h"
-+#include "include/arch.h"
-+#include "include/klog.h" // IWYU pragma: keep
-+#include "include/ksu.h"
- #include "infra/su_mount_ns.h"
- 
- extern int path_mount(const char *dev_name, struct path *path, const char *type_page, unsigned long flags,
-diff --git a/kernel/manager/apk_sign.c b/kernel/manager/apk_sign.c
-index 68b34d55..2e25952b 100644
---- a/kernel/manager/apk_sign.c
-+++ b/kernel/manager/apk_sign.c
-@@ -15,8 +15,8 @@
- #endif
- 
- #include "manager/apk_sign.h"
--#include "uapi/app_profile.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/uapi/app_profile.h"
-+#include "include/klog.h" // IWYU pragma: keep
- 
- struct sdesc {
-     struct shash_desc shash;
-diff --git a/kernel/manager/pkg_observer.c b/kernel/manager/pkg_observer.c
-index f4c0e2a5..5e937f80 100644
---- a/kernel/manager/pkg_observer.c
-+++ b/kernel/manager/pkg_observer.c
-@@ -6,7 +6,7 @@
- #include <linux/slab.h>
- #include <linux/rculist.h>
- #include <linux/version.h>
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
- #include "manager/throne_tracker.h"
- 
- #define MASK_SYSTEM (FS_CREATE | FS_MOVE | FS_EVENT_ON_CHILD)
-diff --git a/kernel/manager/throne_tracker.c b/kernel/manager/throne_tracker.c
-index 568fa12a..91a48a31 100644
---- a/kernel/manager/throne_tracker.c
-+++ b/kernel/manager/throne_tracker.c
-@@ -8,7 +8,7 @@
- 
- #include "policy/allowlist.h"
- #include "manager/apk_sign.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
- #include "manager/manager_identity.h"
- #include "manager/throne_tracker.h"
- 
-diff --git a/kernel/policy/allowlist.c b/kernel/policy/allowlist.c
-index 26f70eed..232fdebf 100644
---- a/kernel/policy/allowlist.c
-+++ b/kernel/policy/allowlist.c
-@@ -15,8 +15,8 @@
- #include <linux/version.h>
- #include <linux/compiler_types.h>
- 
--#include "klog.h" // IWYU pragma: keep
--#include "ksu.h"
-+#include "include/klog.h" // IWYU pragma: keep
-+#include "include/ksu.h"
- #include "runtime/ksud_boot.h"
- #include "selinux/selinux.h"
- #include "policy/allowlist.h"
-diff --git a/kernel/policy/allowlist.h b/kernel/policy/allowlist.h
-index 24098cac..ed9c72bc 100644
---- a/kernel/policy/allowlist.h
-+++ b/kernel/policy/allowlist.h
-@@ -3,7 +3,7 @@
- 
- #include <linux/types.h>
- #include <linux/uidgid.h>
--#include "uapi/app_profile.h"
-+#include "include/uapi/app_profile.h"
- 
- #define PER_USER_RANGE 100000
- #define FIRST_APPLICATION_UID 10000
 diff --git a/kernel/policy/app_profile.c b/kernel/policy/app_profile.c
-index 88a5b0d5..3ddea5ea 100644
+index 88a5b0d5..b46d2a56 100644
 --- a/kernel/policy/app_profile.c
 +++ b/kernel/policy/app_profile.c
-@@ -11,10 +11,9 @@
- 
- #include "policy/allowlist.h"
- #include "policy/app_profile.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
+@@ -14,7 +14,6 @@
+ #include "klog.h" // IWYU pragma: keep
  #include "selinux/selinux.h"
  #include "infra/su_mount_ns.h"
 -#include "hook/tp_marker.h"
@@ -998,19 +817,39 @@ index 88a5b0d5..3ddea5ea 100644
      setup_mount_ns(profile.namespaces);
      return 0;
  
-diff --git a/kernel/policy/feature.c b/kernel/policy/feature.c
-index c1970689..3d87bad9 100644
---- a/kernel/policy/feature.c
-+++ b/kernel/policy/feature.c
-@@ -1,5 +1,5 @@
- #include "policy/feature.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
+@@ -193,14 +186,16 @@ out_abort_creds:
+     return ret;
+ }
  
- #include <linux/mutex.h>
+-void escape_to_root_for_init(void)
++int escape_to_root_for_init(void)
+ {
+     struct cred *cred = prepare_creds();
+     if (!cred) {
+         pr_err("Failed to prepare init's creds!\n");
+-        return;
++        return -EINVAL;
+     }
  
+     setup_selinux(KERNEL_SU_CONTEXT, cred);
+     commit_creds(cred);
++
++    return 0;
+ }
+diff --git a/kernel/policy/app_profile.h b/kernel/policy/app_profile.h
+index 5f67ed59..bd89937a 100644
+--- a/kernel/policy/app_profile.h
++++ b/kernel/policy/app_profile.h
+@@ -4,6 +4,6 @@
+ // Escalate current process to root with the appropriate profile
+ int escape_with_root_profile(void);
+ 
+-void escape_to_root_for_init(void);
++int escape_to_root_for_init(void);
+ 
+ #endif
 diff --git a/kernel/policy/feature.h b/kernel/policy/feature.h
-index 80e3a9d5..6b155f6f 100644
+index 80e3a9d5..7607146c 100644
 --- a/kernel/policy/feature.h
 +++ b/kernel/policy/feature.h
 @@ -2,7 +2,7 @@
@@ -1018,23 +857,14 @@ index 80e3a9d5..6b155f6f 100644
  
  #include <linux/types.h>
 -#include "uapi/feature.h" // IWYU pragma: keep
-+#include "include/uapi/feature.h"
++#include "uapi/feature.h"
  
  typedef int (*ksu_feature_get_t)(u64 *value);
  typedef int (*ksu_feature_set_t)(u64 value);
 diff --git a/kernel/runtime/boot_event.c b/kernel/runtime/boot_event.c
-index b0fd8b3c..646fb932 100644
+index b0fd8b3c..8e60fbaf 100644
 --- a/kernel/runtime/boot_event.c
 +++ b/kernel/runtime/boot_event.c
-@@ -4,7 +4,7 @@
- #include <linux/printk.h>
- 
- #include "policy/allowlist.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
- #include "runtime/ksud_boot.h"
- #include "runtime/ksud.h"
- #include "manager/manager_observer.h"
 @@ -12,6 +12,7 @@
  
  bool ksu_module_mounted __read_mostly = false;
@@ -1080,7 +910,7 @@ index 62cfaabf..ba238519 100644
 +                             struct user_arg_ptr *envp, int *flags);
  #endif
 diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
-index 8d2754b3..d0c5851d 100644
+index 8d2754b3..760ddff1 100644
 --- a/kernel/runtime/ksud_integration.c
 +++ b/kernel/runtime/ksud_integration.c
 @@ -9,7 +9,6 @@
@@ -1091,16 +921,7 @@ index 8d2754b3..d0c5851d 100644
  #include <linux/printk.h>
  #include <linux/types.h>
  #include <linux/uaccess.h>
-@@ -17,14 +16,16 @@
- #include <linux/workqueue.h>
- #include <linux/uio.h>
- 
--#include "arch.h"
--#include "klog.h" // IWYU pragma: keep
--#include "ksu.h"
-+#include "include/arch.h"
-+#include "include/klog.h" // IWYU pragma: keep
-+#include "include/ksu.h"
+@@ -23,8 +22,10 @@
  #include "runtime/ksud.h"
  #include "runtime/ksud_boot.h"
  #include "selinux/selinux.h"
@@ -1113,7 +934,7 @@ index 8d2754b3..d0c5851d 100644
  
  // clang-format off
  static const char KERNEL_SU_RC[] =
-@@ -46,24 +47,6 @@ static const char KERNEL_SU_RC[] =
+@@ -46,43 +47,25 @@ static const char KERNEL_SU_RC[] =
      "\n";
  // clang-format on
  
@@ -1137,7 +958,36 @@ index 8d2754b3..d0c5851d 100644
 -
  static const char __user *get_user_arg_ptr(struct user_arg_ptr argv, int nr)
  {
-     const char __user *native;
+-    const char __user *native;
++	const char __user *native;
+ 
+ #ifdef CONFIG_COMPAT
+-    if (unlikely(argv.is_compat)) {
+-        compat_uptr_t compat;
++	if (unlikely(argv.is_compat)) {
++		compat_uptr_t compat;
+ 
+-        if (get_user(compat, argv.ptr.compat + nr))
+-            return ERR_PTR(-EFAULT);
++		if (get_user(compat, argv.ptr.compat + nr))
++			return ERR_PTR(-EFAULT);
+ 
+-        return compat_ptr(compat);
+-    }
++		return compat_ptr(compat);
++	}
+ #endif
+ 
+-    if (get_user(native, argv.ptr.native + nr))
+-        return ERR_PTR(-EFAULT);
++	if (get_user(native, argv.ptr.native + nr))
++		return ERR_PTR(-EFAULT);
+ 
+-    return native;
++	return native;
+ }
+ 
+ /*
 @@ -132,7 +115,7 @@ static bool check_argv(struct user_arg_ptr argv, int index, const char *expected
      if (!p || IS_ERR(p))
          goto fail;
@@ -1152,7 +1002,7 @@ index 8d2754b3..d0c5851d 100644
  }
  
 -void ksu_handle_execveat_ksud(const char *path, struct user_arg_ptr *argv)
-+extern int ksu_handle_execveat_init(struct filename *filename);
++extern int ksu_handle_execveat_init(struct filename *filename, struct user_arg_ptr *argv_user);
 +
 +// IMPORTANT NOTE: the call from execve_handler_pre WON'T provided correct value for envp and flags in GKI version
 +int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
@@ -1206,7 +1056,7 @@ index 8d2754b3..d0c5851d 100644
      }
 +
 +    // - We need to run ksu_handle_execveat_init() at the very end in case the above checks are skipped
-+    (void)ksu_handle_execveat_init(filename);
++    (void)ksu_handle_execveat_init(filename, argv);
 +
 +    return 0;
  }
@@ -1272,8 +1122,7 @@ index 8d2754b3..d0c5851d 100644
  }
  
 -void ksu_execve_hook_ksud(const struct pt_regs *regs)
-+void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr)
- {
+-{
 -    const char __user **filename_user = (const char **)&PT_REGS_PARM1(regs);
 -    const char __user *const __user *__argv = (const char __user *const __user *)PT_REGS_PARM2(regs);
 -    struct user_arg_ptr argv = { .ptr.native = __argv };
@@ -1300,7 +1149,8 @@ index 8d2754b3..d0c5851d 100644
 -
 -static long (*orig_sys_read)(const struct pt_regs *regs);
 -static long ksu_sys_read(const struct pt_regs *regs)
--{
++void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr)
+ {
 -    unsigned int fd = PT_REGS_PARM1(regs);
 -    char __user **buf_ptr = (char __user **)&PT_REGS_PARM2(regs);
 -    size_t *count_ptr = (size_t *)&PT_REGS_PARM3(regs);
@@ -1326,7 +1176,7 @@ index 8d2754b3..d0c5851d 100644
 -        }
 -        fput(file);
 -    }
- 
+-
 -    ret = orig_sys_fstat(regs);
 -
 -    if (is_rc) {
@@ -1365,7 +1215,7 @@ index 8d2754b3..d0c5851d 100644
 -{
 -    unregister_kprobe(&input_event_kp);
 -}
--
+ 
 -static void stop_init_rc_hook()
 -{
 -    ksu_syscall_table_unhook(__NR_read);
@@ -1413,20 +1263,9 @@ index 8d2754b3..d0c5851d 100644
 -    unregister_kprobe(&input_event_kp);
  }
 diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
-index 826ef6da..8266ba87 100644
+index ed568008..8857a22d 100644
 --- a/kernel/selinux/rules.c
 +++ b/kernel/selinux/rules.c
-@@ -7,8 +7,8 @@
- #include <linux/slab.h>
- #include <linux/string.h>
- 
--#include "uapi/selinux.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/uapi/selinux.h"
-+#include "include/klog.h" // IWYU pragma: keep
- #include "selinux.h"
- #include "sepolicy.h"
- #include "ss/services.h"
 @@ -123,8 +123,14 @@ void apply_kernelsu_rules()
      ksu_destroy_sepolicy(old_pol);
  
@@ -1443,20 +1282,9 @@ index 826ef6da..8266ba87 100644
  
  #define KSU_SEPOLICY_MAX_BATCH_SIZE (8U * 1024U * 1024U)
 diff --git a/kernel/selinux/selinux.c b/kernel/selinux/selinux.c
-index 599ad9c6..6cc140d2 100644
+index 599ad9c6..59558ff3 100644
 --- a/kernel/selinux/selinux.c
 +++ b/kernel/selinux/selinux.c
-@@ -3,8 +3,8 @@
- #include "linux/sched.h"
- #include "objsec.h"
- #include "linux/version.h"
--#include "klog.h" // IWYU pragma: keep
--#include "ksu.h"
-+#include "include/klog.h" // IWYU pragma: keep
-+#include "include/ksu.h"
- 
- /*
-  * Cached SID values for frequently checked contexts.
 @@ -201,3 +201,97 @@ bool is_init(const struct cred *cred)
  {
      return is_sid_match(cred, cached_init_sid, INIT_CONTEXT);
@@ -1575,51 +1403,210 @@ index 08488da6..9aa0ae48 100644
 +void susfs_set_priv_app_sid(void);
 +
  #endif
-diff --git a/kernel/selinux/sepolicy.c b/kernel/selinux/sepolicy.c
-index 194d52be..7179957c 100644
---- a/kernel/selinux/sepolicy.c
-+++ b/kernel/selinux/sepolicy.c
-@@ -10,7 +10,7 @@
- #include <linux/version.h>
+diff --git a/kernel/sulog/event.c b/kernel/sulog/event.c
+index 7c893ae0..5df9e44d 100644
+--- a/kernel/sulog/event.c
++++ b/kernel/sulog/event.c
+@@ -20,18 +20,6 @@
+ #define KSU_SULOG_MAX_ARG_CHUNK 256U
+ #define KSU_SULOG_MAX_FILENAME_LEN 256U
  
- #include "sepolicy.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/klog.h" // IWYU pragma: keep
- #include "ss/symtab.h"
+-struct user_arg_ptr {
+-#ifdef CONFIG_COMPAT
+-    bool is_compat;
+-#endif
+-    union {
+-        const char __user *const __user *native;
+-#ifdef CONFIG_COMPAT
+-        const compat_uptr_t __user *compat;
+-#endif
+-    } ptr;
+-};
+-
+ static struct ksu_event_queue sulog_queue;
  
- #define KSU_SUPPORT_ADD_TYPE
+ struct ksu_sulog_pending_event {
+@@ -62,25 +50,25 @@ static struct user_arg_ptr ksu_sulog_user_argv(const char __user *const __user *
+     return argv;
+ }
+ 
+-static const char __user *ksu_sulog_get_user_arg_ptr(struct user_arg_ptr argv, int nr)
++static const char __user *get_user_arg_ptr(struct user_arg_ptr argv, int nr)
+ {
+-    const char __user *native;
++	const char __user *native;
+ 
+ #ifdef CONFIG_COMPAT
+-    if (unlikely(argv.is_compat)) {
+-        compat_uptr_t compat;
++	if (unlikely(argv.is_compat)) {
++		compat_uptr_t compat;
+ 
+-        if (get_user(compat, argv.ptr.compat + nr))
+-            return ERR_PTR(-EFAULT);
++		if (get_user(compat, argv.ptr.compat + nr))
++			return ERR_PTR(-EFAULT);
+ 
+-        return compat_ptr(compat);
+-    }
++		return compat_ptr(compat);
++	}
+ #endif
+ 
+-    if (get_user(native, argv.ptr.native + nr))
+-        return ERR_PTR(-EFAULT);
++	if (get_user(native, argv.ptr.native + nr))
++		return ERR_PTR(-EFAULT);
+ 
+-    return native;
++	return native;
+ }
+ 
+ static void ksu_sulog_fill_task_info(struct ksu_sulog_event *event, __u16 event_type, int retval)
+@@ -111,6 +99,28 @@ static __u32 ksu_sulog_copy_empty_string(char *dst)
+     return 1;
+ }
+ 
++static __u32 ksu_sulog_copy_filename_kernel(const char *filename, char *dst, __u32 dst_len)
++{
++    long ret;
++
++    if (!dst_len)
++        return 0;
++
++    if (!filename)
++        return ksu_sulog_copy_empty_string(dst);
++
++    ret = strncpy(dst, filename, dst_len);
++    if (ret <= 0)
++        return ksu_sulog_copy_empty_string(dst);
++
++    if (ret >= dst_len) {
++        dst[dst_len - 1] = '\0';
++        return dst_len;
++    }
++
++    return ret + 1;
++}
++
+ static __u32 ksu_sulog_copy_filename(const char __user *filename_user, char *dst, __u32 dst_len)
+ {
+     long ret;
+@@ -133,9 +143,8 @@ static __u32 ksu_sulog_copy_filename(const char __user *filename_user, char *dst
+     return ret + 1;
+ }
+ 
+-static __u32 ksu_sulog_flatten_argv(const char __user *const __user *argv_user, char *dst, __u32 dst_len)
++static __u32 ksu_sulog_flatten_argv(struct user_arg_ptr *argv_user, char *dst, __u32 dst_len)
+ {
+-    struct user_arg_ptr argv = ksu_sulog_user_argv(argv_user);
+     char arg[KSU_SULOG_MAX_ARG_CHUNK];
+     __u32 used = 0;
+     int i;
+@@ -154,7 +163,7 @@ static __u32 ksu_sulog_flatten_argv(const char __user *const __user *argv_user,
+         if (fatal_signal_pending(current))
+             break;
+ 
+-        arg_user = ksu_sulog_get_user_arg_ptr(argv, i);
++        arg_user = get_user_arg_ptr(*argv_user, i);
+         if (!arg_user)
+             break;
+         if (IS_ERR(arg_user))
+@@ -190,8 +199,8 @@ static __u32 ksu_sulog_flatten_argv(const char __user *const __user *argv_user,
+     return used + 1;
+ }
+ 
+-static struct ksu_sulog_pending_event *ksu_sulog_capture(__u16 event_type, const char __user *filename_user,
+-                                                         const char __user *const __user *argv_user, gfp_t gfp)
++static struct ksu_sulog_pending_event *ksu_sulog_capture(__u16 event_type, const char *filename,
++                                                         struct user_arg_ptr *argv_user, gfp_t gfp)
+ {
+     struct ksu_sulog_pending_event *pending = NULL;
+     struct ksu_sulog_event *event;
+@@ -202,6 +211,7 @@ static struct ksu_sulog_pending_event *ksu_sulog_capture(__u16 event_type, const
+     __u32 remaining;
+     char *filename_buf;
+     char *argv_buf;
++
+     if (!ksu_sulog_is_enabled())
+         return NULL;
+ 
+@@ -218,7 +228,7 @@ static struct ksu_sulog_pending_event *ksu_sulog_capture(__u16 event_type, const
+ 
+     remaining = KSU_SULOG_MAX_PAYLOAD_LEN - sizeof(*event);
+     filename_buf = (char *)payload + sizeof(*event);
+-    filename_len = ksu_sulog_copy_filename(filename_user, filename_buf, min(remaining, KSU_SULOG_MAX_FILENAME_LEN));
++    filename_len = ksu_sulog_copy_filename_kernel(filename, filename_buf, min(remaining, KSU_SULOG_MAX_FILENAME_LEN));
+     if (!filename_len)
+         goto out_free_payload;
+ 
+@@ -283,16 +293,10 @@ static void ksu_sulog_free_pending(struct ksu_sulog_pending_event *pending)
+     kfree(pending);
+ }
+ 
+-struct ksu_sulog_pending_event *ksu_sulog_capture_root_execve(const char __user *filename_user,
+-                                                              const char __user *const __user *argv_user, gfp_t gfp)
+-{
+-    return ksu_sulog_capture(KSU_SULOG_EVENT_ROOT_EXECVE, filename_user, argv_user, gfp);
+-}
+-
+-struct ksu_sulog_pending_event *ksu_sulog_capture_sucompat(const char __user *filename_user,
+-                                                           const char __user *const __user *argv_user, gfp_t gfp)
++struct ksu_sulog_pending_event *ksu_sulog_capture_sucompat(const char *filename,
++                                                           struct user_arg_ptr *argv_user, gfp_t gfp)
+ {
+-    return ksu_sulog_capture(KSU_SULOG_EVENT_SUCOMPAT, filename_user, argv_user, gfp);
++    return ksu_sulog_capture(KSU_SULOG_EVENT_SUCOMPAT, filename, argv_user, gfp);
+ }
+ 
+ void ksu_sulog_emit_pending(struct ksu_sulog_pending_event *pending, int retval, gfp_t gfp)
+diff --git a/kernel/sulog/event.h b/kernel/sulog/event.h
+index 635ec01c..c7b28b86 100644
+--- a/kernel/sulog/event.h
++++ b/kernel/sulog/event.h
+@@ -5,6 +5,7 @@
+ #include <linux/gfp.h>
+ #include <linux/types.h>
+ #include "uapi/sulog.h" // IWYU pragma: keep
++#include "runtime/ksud.h"
+ 
+ struct ksu_event_queue;
+ struct ksu_sulog_pending_event;
+@@ -12,10 +13,8 @@ struct ksu_sulog_pending_event;
+ int ksu_sulog_events_init(void);
+ void ksu_sulog_events_exit(void);
+ 
+-struct ksu_sulog_pending_event *ksu_sulog_capture_root_execve(const char __user *filename_user,
+-                                                              const char __user *const __user *argv_user, gfp_t gfp);
+-struct ksu_sulog_pending_event *ksu_sulog_capture_sucompat(const char __user *filename_user,
+-                                                           const char __user *const __user *argv_user, gfp_t gfp);
++struct ksu_sulog_pending_event *ksu_sulog_capture_sucompat(const char *filename,
++                                                           struct user_arg_ptr *argv_user, gfp_t gfp);
+ void ksu_sulog_emit_pending(struct ksu_sulog_pending_event *pending, int retval, gfp_t gfp);
+ int ksu_sulog_emit_grant_root(int retval, __u32 uid, __u32 euid, gfp_t gfp);
+ 
 diff --git a/kernel/supercall/dispatch.c b/kernel/supercall/dispatch.c
-index f74f0899..7698ef06 100644
+index 368c0203..1c774bbc 100644
 --- a/kernel/supercall/dispatch.c
 +++ b/kernel/supercall/dispatch.c
-@@ -3,20 +3,21 @@
+@@ -3,6 +3,8 @@
  #include <linux/slab.h>
  #include <linux/uaccess.h>
  #include <linux/version.h>
 +#include <linux/namei.h>
 +#include <linux/susfs.h>
  
--#include "uapi/supercall.h"
-+#include "include/uapi/supercall.h"
+ #include "uapi/supercall.h"
  #include "supercall/internal.h"
--#include "arch.h" // IWYU pragma: keep
-+#include "include/arch.h" // IWYU pragma: keep
- #include "policy/allowlist.h"
- #include "policy/feature.h"
--#include "klog.h" // IWYU pragma: keep
--#include "ksu.h"
-+#include "include/klog.h" // IWYU pragma: keep
-+#include "include/ksu.h"
- #include "runtime/ksud_boot.h"
- #include "feature/kernel_umount.h"
+@@ -16,7 +18,6 @@
  #include "manager/manager_identity.h"
  #include "selinux/selinux.h"
  #include "infra/file_wrapper.h"
 -#include "hook/tp_marker.h"
  #include "policy/app_profile.h"
- #include "supercall/supercall.h"
- 
-@@ -41,9 +42,6 @@ static int do_get_info(void __user *arg)
+ #include "sulog/event.h"
+ #include "sulog/fd.h"
+@@ -48,9 +49,6 @@ static int do_get_info(void __user *arg)
      if (is_manager()) {
          cmd.flags |= KSU_GET_INFO_FLAG_MANAGER;
      }
@@ -1629,7 +1616,7 @@ index f74f0899..7698ef06 100644
  #ifdef EXPECTED_SIZE2
      cmd.flags |= KSU_GET_INFO_FLAG_PR_BUILD;
  #endif
-@@ -70,12 +68,8 @@ static int do_report_event(void __user *arg)
+@@ -77,12 +75,8 @@ static int do_report_event(void __user *arg)
          static bool post_fs_data_lock = false;
          if (!post_fs_data_lock) {
              post_fs_data_lock = true;
@@ -1644,7 +1631,7 @@ index f74f0899..7698ef06 100644
          }
          break;
      }
-@@ -83,12 +77,9 @@ static int do_report_event(void __user *arg)
+@@ -90,12 +84,9 @@ static int do_report_event(void __user *arg)
          static bool boot_complete_lock = false;
          if (!boot_complete_lock) {
              boot_complete_lock = true;
@@ -1660,7 +1647,7 @@ index f74f0899..7698ef06 100644
          }
          break;
      }
-@@ -327,7 +318,6 @@ static int do_set_app_profile(void __user *arg)
+@@ -334,7 +325,6 @@ static int do_set_app_profile(void __user *arg)
      ret = ksu_set_app_profile(&cmd.profile);
      if (!ret) {
          ksu_persistent_allow_list();
@@ -1668,7 +1655,7 @@ index f74f0899..7698ef06 100644
      }
      return ret;
  }
-@@ -404,49 +394,32 @@ static int do_manage_mark(void __user *arg)
+@@ -411,49 +401,32 @@ static int do_manage_mark(void __user *arg)
      }
  
      switch (cmd.operation) {
@@ -1739,7 +1726,7 @@ index f74f0899..7698ef06 100644
      }
      if (copy_to_user(arg, &cmd, sizeof(cmd))) {
          pr_err("manage_mark: copy_to_user failed\n");
-@@ -456,6 +429,99 @@ static int do_manage_mark(void __user *arg)
+@@ -463,6 +436,99 @@ static int do_manage_mark(void __user *arg)
      return 0;
  }
  
@@ -1840,23 +1827,9 @@ index f74f0899..7698ef06 100644
  {
      struct ksu_nuke_ext4_sysfs_cmd cmd;
 diff --git a/kernel/supercall/supercall.c b/kernel/supercall/supercall.c
-index 9ad6bd10..bec61cef 100644
+index 9ad6bd10..ea55f8f2 100644
 --- a/kernel/supercall/supercall.c
 +++ b/kernel/supercall/supercall.c
-@@ -11,10 +11,10 @@
- #include <linux/uaccess.h>
- #include <linux/version.h>
- 
--#include "uapi/supercall.h"
-+#include "include/uapi/supercall.h"
- #include "supercall/internal.h"
--#include "arch.h"
--#include "klog.h" // IWYU pragma: keep
-+#include "include/arch.h"
-+#include "include/klog.h" // IWYU pragma: keep
- 
- struct ksu_install_fd_tw {
-     struct callback_head cb;
 @@ -80,53 +80,31 @@ static void ksu_install_fd_tw_func(struct callback_head *cb)
      kfree(tw);
  }
@@ -1933,16 +1906,3 @@ index fbedd11f..483e5069 100644
  
  void ksu_supercalls_init(void);
  void ksu_supercalls_exit(void);
-diff --git a/uapi/supercall.h b/uapi/supercall.h
-index 13ddb0ac..f654f717 100644
---- a/uapi/supercall.h
-+++ b/uapi/supercall.h
-@@ -4,7 +4,7 @@
- #include <linux/ioctl.h>
- #include <linux/types.h>
- 
--#include "uapi/app_profile.h"
-+#include "include/uapi/app_profile.h"
- 
- /* Magic numbers for reboot hook to install fd */
- static const __u32 KSU_INSTALL_MAGIC1 = 0xDEADBEEF;
