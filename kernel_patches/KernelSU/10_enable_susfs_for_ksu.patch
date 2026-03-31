@@ -164,7 +164,7 @@ index 068476e0..8590d1ec 100644
 +
  # Keep a new line here!! Because someone may append config
 diff --git a/kernel/core/init.c b/kernel/core/init.c
-index 31baad20..0c58b69f 100644
+index 6f9c0bec..0077c687 100644
 --- a/kernel/core/init.c
 +++ b/kernel/core/init.c
 @@ -6,6 +6,7 @@
@@ -302,7 +302,7 @@ index 31baad20..0c58b69f 100644
  #ifndef CONFIG_KSU_DEBUG
 @@ -176,18 +118,12 @@ int __init kernelsu_init(void)
  
- void kernelsu_exit(void)
+ void __exit kernelsu_exit(void)
  {
 -    // Phase 1: Stop all hooks first to prevent new callbacks
 -    ksu_syscall_hook_manager_exit();
@@ -321,7 +321,7 @@ index 31baad20..0c58b69f 100644
  
      ksu_throne_tracker_exit();
 diff --git a/kernel/feature/kernel_umount.c b/kernel/feature/kernel_umount.c
-index 00793a9a..74b81ab0 100644
+index 76b36f84..4da2ea9c 100644
 --- a/kernel/feature/kernel_umount.c
 +++ b/kernel/feature/kernel_umount.c
 @@ -87,29 +87,6 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
@@ -355,7 +355,7 @@ index 00793a9a..74b81ab0 100644
      pr_info("handle umount for uid: %d, pid: %d\n", new_uid, current->pid);
  
 diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
-index c96719da..fbc6e03c 100644
+index ca4bb84e..c75902cd 100644
 --- a/kernel/feature/sucompat.c
 +++ b/kernel/feature/sucompat.c
 @@ -11,6 +11,11 @@
@@ -637,7 +637,7 @@ index c96719da..fbc6e03c 100644
  }
  
  // sucompat: permitted process can execute 'su' to gain root access.
- void ksu_sucompat_init()
+ void __init ksu_sucompat_init()
  {
 -    if (ksu_register_feature_handler(&su_compat_handler)) {
 +    if (ksu_register_feature_handler(&su_compat_handler))
@@ -645,7 +645,7 @@ index c96719da..fbc6e03c 100644
 -    }
  }
  
- void ksu_sucompat_exit()
+ void __exit ksu_sucompat_exit()
 diff --git a/kernel/feature/sucompat.h b/kernel/feature/sucompat.h
 index 1afba60f..ebee691b 100644
 --- a/kernel/feature/sucompat.h
@@ -664,7 +664,7 @@ index 1afba60f..ebee691b 100644
  #endif
 \ No newline at end of file
 diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
-index 5ed96607..6560e5e1 100644
+index d3f3ac49..565ab66e 100644
 --- a/kernel/hook/setuid_hook.c
 +++ b/kernel/hook/setuid_hook.c
 @@ -11,6 +11,8 @@
@@ -925,7 +925,7 @@ index 62cfaabf..ba238519 100644
 +                             struct user_arg_ptr *envp, int *flags);
  #endif
 diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
-index 8d2754b3..760ddff1 100644
+index 25933bb6..8f55e13c 100644
 --- a/kernel/runtime/ksud_integration.c
 +++ b/kernel/runtime/ksud_integration.c
 @@ -9,7 +9,6 @@
@@ -1257,7 +1257,7 @@ index 8d2754b3..760ddff1 100644
  }
  
  // ksud: module support
- void ksu_ksud_init()
+ void __init ksu_ksud_init()
  {
 -    int ret;
 -
@@ -1270,7 +1270,7 @@ index 8d2754b3..760ddff1 100644
 -    INIT_WORK(&stop_input_hook_work, do_stop_input_hook);
  }
  
- void ksu_ksud_exit()
+ void __exit ksu_ksud_exit()
  {
 -    // TODO:
 -    // this should be done before unregister vfs_read_kp
@@ -1419,7 +1419,7 @@ index 08488da6..9aa0ae48 100644
 +
  #endif
 diff --git a/kernel/sulog/event.c b/kernel/sulog/event.c
-index 7c893ae0..5df9e44d 100644
+index 4a767b81..0277ea9e 100644
 --- a/kernel/sulog/event.c
 +++ b/kernel/sulog/event.c
 @@ -20,18 +20,6 @@
@@ -1601,7 +1601,7 @@ index 635ec01c..c7b28b86 100644
  int ksu_sulog_emit_grant_root(int retval, __u32 uid, __u32 euid, gfp_t gfp);
  
 diff --git a/kernel/supercall/dispatch.c b/kernel/supercall/dispatch.c
-index 368c0203..1c774bbc 100644
+index 64ad0e02..436892fb 100644
 --- a/kernel/supercall/dispatch.c
 +++ b/kernel/supercall/dispatch.c
 @@ -3,6 +3,8 @@
@@ -1842,7 +1842,7 @@ index 368c0203..1c774bbc 100644
  {
      struct ksu_nuke_ext4_sysfs_cmd cmd;
 diff --git a/kernel/supercall/supercall.c b/kernel/supercall/supercall.c
-index 9ad6bd10..ea55f8f2 100644
+index ba3ad1c4..1d422388 100644
 --- a/kernel/supercall/supercall.c
 +++ b/kernel/supercall/supercall.c
 @@ -80,53 +80,31 @@ static void ksu_install_fd_tw_func(struct callback_head *cb)
@@ -1890,7 +1890,7 @@ index 9ad6bd10..ea55f8f2 100644
 -    .pre_handler = reboot_handler_pre,
 -};
 -
- void ksu_supercalls_init(void)
+ void __init ksu_supercalls_init(void)
  {
 -    int rc;
 -
@@ -1904,7 +1904,7 @@ index 9ad6bd10..ea55f8f2 100644
 -    }
  }
  
- void ksu_supercalls_exit(void)
+ void __exit ksu_supercalls_exit(void)
  {
 -    unregister_kprobe(&reboot_kp);
      ksu_supercall_cleanup_state();
