@@ -1,5 +1,5 @@
 diff --git a/kernel/Kbuild b/kernel/Kbuild
-index 08e273b1..410e1dce 100644
+index d4a07c97..18ce2e65 100644
 --- a/kernel/Kbuild
 +++ b/kernel/Kbuild
 @@ -4,18 +4,7 @@ kernelsu-objs += feature/kernel_umount.o
@@ -21,21 +21,6 @@ index 08e273b1..410e1dce 100644
  
  kernelsu-objs += infra/file_wrapper.o
  kernelsu-objs += infra/event_queue.o
-@@ -62,11 +51,9 @@ endif
- ccflags-y += -I$(srctree)/security/selinux -I$(srctree)/security/selinux/include
- ccflags-y += -I$(objtree)/security/selinux -include $(srctree)/include/uapi/asm-generic/errno.h
- 
--ifdef KBUILD_EXTMOD
--ccflags-y += -I$(src) -I$(src)/include
--else
--ccflags-y += -I$(srctree)/$(src) -I$(srctree)/$(src)/include
--endif
-+## As we are building gki only, no KBUILD_EXTMOD is needed
-+## Since there is still a build error for 6.12 as $(src) returns absolute path, so here we just hardcode it
-+ccflags-y += -I$(srctree)/drivers/kernelsu -I$(srctree)/drivers/kernelsu/include
- 
- obj-$(CONFIG_KSU) += kernelsu.o
- 
 diff --git a/kernel/Kconfig b/kernel/Kconfig
 index c7701661..5c169f59 100644
 --- a/kernel/Kconfig
@@ -164,7 +149,7 @@ index 068476e0..8590d1ec 100644
 +
  # Keep a new line here!! Because someone may append config
 diff --git a/kernel/core/init.c b/kernel/core/init.c
-index 6f9c0bec..0077c687 100644
+index abf3eb8d..555e22ec 100644
 --- a/kernel/core/init.c
 +++ b/kernel/core/init.c
 @@ -6,6 +6,7 @@
@@ -183,11 +168,12 @@ index 6f9c0bec..0077c687 100644
  #include "runtime/ksud.h"
  #include "runtime/ksud_boot.h"
  #include "feature/sulog.h"
-@@ -21,15 +21,8 @@
+@@ -21,16 +21,9 @@
  #include "ksu.h"
  #include "infra/file_wrapper.h"
  #include "selinux/selinux.h"
 -#include "hook/syscall_hook.h"
+ #include "feature/adb_root.h"
 -
 -#if defined(__x86_64__)
 -#include <asm/cpufeature.h>
@@ -201,7 +187,7 @@ index 6f9c0bec..0077c687 100644
  
  // workaround for A12-5.10 kernel
  // Some third-party kernel (e.g. linegaeOS) uses wrong toolchain, which supports
-@@ -67,7 +60,6 @@ __attribute__((naked)) int __init kernelsu_init_early(void)
+@@ -68,7 +61,6 @@ __attribute__((naked)) int __init kernelsu_init_early(void)
  #endif
  
  struct cred *ksu_cred;
@@ -209,7 +195,7 @@ index 6f9c0bec..0077c687 100644
  
  #ifdef CONFIG_KSU_DEBUG
  bool allow_shell = true;
-@@ -78,28 +70,6 @@ module_param(allow_shell, bool, 0);
+@@ -79,28 +71,6 @@ module_param(allow_shell, bool, 0);
  
  int __init kernelsu_init(void)
  {
@@ -238,7 +224,7 @@ index 6f9c0bec..0077c687 100644
  #ifdef CONFIG_KSU_DEBUG
      pr_alert("*************************************************************");
      pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
-@@ -118,53 +88,25 @@ int __init kernelsu_init(void)
+@@ -119,54 +89,27 @@ int __init kernelsu_init(void)
          pr_err("prepare cred failed!\n");
      }
  
@@ -246,6 +232,7 @@ index 6f9c0bec..0077c687 100644
 -
      ksu_feature_init();
 -    ksu_sulog_init();
+-    ksu_adb_root_init();
  
      ksu_supercalls_init();
  
@@ -260,26 +247,27 @@ index 6f9c0bec..0077c687 100644
 -        // with KSU SELinux domain before enforcing SELinux, so it
 -        // can continue to access /data/app etc. after enforcement.
 -        escape_to_root_for_init();
--
--        ksu_allowlist_init();
--        ksu_load_allow_list();
--
--        ksu_syscall_hook_manager_init();
 +    ksu_sucompat_init();
  
+-        ksu_allowlist_init();
+-        ksu_load_allow_list();
++    ksu_setuid_hook_init();
+ 
+-        ksu_syscall_hook_manager_init();
+-
 -        ksu_throne_tracker_init();
 -        ksu_observer_init();
 -        ksu_file_wrapper_init();
-+    ksu_setuid_hook_init();
- 
+-
 -        ksu_boot_completed = true;
 -        track_throne(false);
--
++    ksu_sulog_init();
+ 
 -        if (!getenforce()) {
 -            pr_info("Permissive SELinux, enforcing\n");
 -            setenforce(true);
 -        }
-+    ksu_sulog_init();
++    ksu_adb_root_init();
  
 -    } else {
 -        ksu_syscall_hook_manager_init();
@@ -300,7 +288,7 @@ index 6f9c0bec..0077c687 100644
  
  #ifdef MODULE
  #ifndef CONFIG_KSU_DEBUG
-@@ -176,18 +118,12 @@ int __init kernelsu_init(void)
+@@ -178,18 +121,12 @@ int __init kernelsu_init(void)
  
  void __exit kernelsu_exit(void)
  {
@@ -320,20 +308,162 @@ index 6f9c0bec..0077c687 100644
      ksu_observer_exit();
  
      ksu_throne_tracker_exit();
-diff --git a/kernel/feature/kernel_umount.c b/kernel/feature/kernel_umount.c
-index 76b36f84..4da2ea9c 100644
---- a/kernel/feature/kernel_umount.c
-+++ b/kernel/feature/kernel_umount.c
-@@ -87,29 +87,6 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+@@ -197,7 +134,9 @@ void __exit kernelsu_exit(void)
+     ksu_allowlist_exit();
+ 
+     ksu_adb_root_exit();
++
+     ksu_sulog_exit();
++
+     ksu_feature_exit();
+ 
+     if (ksu_cred) {
+diff --git a/kernel/feature/adb_root.c b/kernel/feature/adb_root.c
+index 98990673..d8c1c074 100644
+--- a/kernel/feature/adb_root.c
++++ b/kernel/feature/adb_root.c
+@@ -9,9 +9,12 @@
+ #include <linux/ptrace.h>
+ #include <linux/static_key.h>
+ #include <linux/slab.h>
++#include <linux/sched/task_stack.h>
++#include <linux/susfs_def.h>
+ 
+ #include "adb_root.h"
+ #include "arch.h"
++#include "policy/app_profile.h"
+ #include "policy/feature.h"
+ #include "selinux/selinux.h"
+ 
+@@ -19,33 +22,16 @@
+ 
+ DEFINE_STATIC_KEY_FALSE(ksu_adb_root);
+ 
+-static long is_exec_adbd(struct pt_regs *regs)
++static inline long is_exec_adbd(const char *filename)
+ {
+-    static const char kAdbd[] = "/adbd";
+-    static const size_t kAdbdLen = sizeof(kAdbd) - 1;
+-    char __user *filename_user = (char __user *)PT_REGS_PARM1(regs);
+-    // should be bigger than `/apex/com.android.adbd/bin/adbd`
+-    char buf[40];
+-    char __user *fn;
+-    long ret;
+-    fn = (char __user *)untagged_addr((unsigned long)filename_user);
+-    memset(buf, 0, sizeof(buf));
+-
+-    ret = strncpy_from_user(buf, fn, sizeof(buf));
+-    if (ret < 0) {
+-        pr_warn("Access filename when adb_root_handle_execve failed: %ld\n", ret);
+-        return ret;
+-    }
++    if (strstr(filename, "adbd"))
++        pr_info("is_exec_adbd() => filename: %s\n", filename);
+ 
+-    // strncpy_from_user may copy `sizeof(buf)` bytes
+-    if (ret < kAdbdLen || ret >= sizeof(buf) || memcmp(buf + ret - kAdbdLen, kAdbd, kAdbdLen + 1) != 0) {
+-        return 0;
+-    }
+-
+-    return 1;
++    return (susfs_starts_with(filename, "/apex/") &&
++                susfs_ends_with(filename, "/adbd"));
+ }
+ 
+-static long is_libadbroot_ok()
++static long is_libadbroot_ok(void)
+ {
+     static const char kLibAdbRoot[] = "/data/adb/ksu/lib/libadbroot.so";
+     struct path path;
+@@ -64,15 +50,16 @@ static long is_libadbroot_ok()
+     return ret;
+ }
+ 
+-static long setup_ld_preload(struct pt_regs *regs)
++static long setup_ld_preload(void ***envp_user_ptr)
++//static long setup_ld_preload(struct pt_regs *regs)
+ {
+     static const char kLdPreload[] = "LD_PRELOAD=/data/adb/ksu/lib/libadbroot.so";
+     static const char kLdLibraryPath[] = "LD_LIBRARY_PATH=/data/adb/ksu/lib";
+     static const size_t kReadEnvBatch = 16;
+     static const size_t kPtrSize = sizeof(unsigned long);
+-    unsigned long stackp = user_stack_pointer(regs);
++    unsigned long stackp = current_user_stack_pointer();
+     unsigned long envp, ld_preload_p, ld_library_path_p;
+-    unsigned long *envp_p = (unsigned long *)&PT_REGS_PARM3(regs);
++    unsigned long *envp_p = (unsigned long)envp_user_ptr;
+     unsigned long *tmp_env_p = NULL, *tmp_env_p2 = NULL;
+     size_t env_count = 0, total_size;
+     long ret;
+@@ -158,9 +145,9 @@ out_release_env_p:
+     return ret;
+ }
+ 
+-static long do_ksu_adb_root_handle_execve(struct pt_regs *regs)
++static long do_ksu_adb_root_handle_execve(const char *filename, void ***envp_user_ptr)
+ {
+-    if (likely(is_exec_adbd(regs) != 1)) {
++    if (likely(is_exec_adbd(filename) != 1)) {
          return 0;
      }
  
--    // There are 5 scenarios:
+@@ -168,20 +155,25 @@ static long do_ksu_adb_root_handle_execve(struct pt_regs *regs)
+         return 0;
+     }
+ 
+-    long ret = setup_ld_preload(regs);
++    long ret = setup_ld_preload(envp_user_ptr);
+     if (ret) {
+         return ret;
+     }
+ 
+     pr_info("escape to root for adb\n");
+     escape_to_root_for_adb_root();
++
++    ret = escape_with_root_profile();
++    if (ret)
++        pr_err("escape_with_root_profile() failed: %d\n", (int)ret);
++
+     return 0;
+ }
+ 
+-long ksu_adb_root_handle_execve(struct pt_regs *regs)
++long ksu_adb_root_handle_execve(const char *filename, void ***envp_user_ptr)
+ {
+     if (static_branch_unlikely(&ksu_adb_root)) {
+-        return do_ksu_adb_root_handle_execve(regs);
++        return do_ksu_adb_root_handle_execve(filename, envp_user_ptr);
+     }
+     return 0;
+ }
+diff --git a/kernel/feature/adb_root.h b/kernel/feature/adb_root.h
+index 754dba23..f08a101b 100644
+--- a/kernel/feature/adb_root.h
++++ b/kernel/feature/adb_root.h
+@@ -2,7 +2,7 @@
+ #define __KSU_H_ADB_ROOT
+ #include <asm/ptrace.h>
+ 
+-long ksu_adb_root_handle_execve(struct pt_regs *regs);
++long ksu_adb_root_handle_execve(const char *filename, void __user ***envp_user_ptr);
+ 
+ void ksu_adb_root_init(void);
+ 
+diff --git a/kernel/feature/kernel_umount.c b/kernel/feature/kernel_umount.c
+index 9caaf9b5..4da2ea9c 100644
+--- a/kernel/feature/kernel_umount.c
++++ b/kernel/feature/kernel_umount.c
+@@ -87,30 +87,6 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+         return 0;
+     }
+ 
+-    // There are 6 scenarios:
 -    // 1. Normal app: zygote -> appuid
 -    // 2. Isolated process forked from zygote: zygote -> isolated_process
 -    // 3. App zygote forked from zygote: zygote -> appuid
--    // 4. Isolated process froked from app zygote: appuid -> isolated_process (already handled by 3)
--    // 5. Isolated process froked from webview zygote (no need to handle, app cannot run custom code)
+-    // 4. Webview zygote forked from zygote: zygote -> WEBVIEW_ZYGOTE_UID (no need to handle, app cannot run custom code)
+-    // 5. Isolated process forked from app zygote: appuid -> isolated_process (already handled by 3)
+-    // 6. Isolated process forked from webview zygote (no need to handle, app cannot run custom code)
 -    if (!is_appuid(new_uid) && !is_isolated_process(new_uid)) {
 -        return 0;
 -    }
@@ -355,7 +485,7 @@ index 76b36f84..4da2ea9c 100644
      pr_info("handle umount for uid: %d, pid: %d\n", new_uid, current->pid);
  
 diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
-index ca4bb84e..c75902cd 100644
+index ca4bb84e..eb550efe 100644
 --- a/kernel/feature/sucompat.c
 +++ b/kernel/feature/sucompat.c
 @@ -11,6 +11,11 @@
@@ -370,7 +500,11 @@ index ca4bb84e..c75902cd 100644
  
  #include "arch.h"
  #include "policy/allowlist.h"
-@@ -21,10 +26,15 @@
+@@ -18,13 +23,19 @@
+ #include "klog.h" // IWYU pragma: keep
+ #include "runtime/ksud.h"
+ #include "feature/sucompat.h"
++#include "feature/adb_root.h"
  #include "policy/app_profile.h"
  #include "hook/syscall_hook.h"
  #include "sulog/event.h"
@@ -386,7 +520,7 @@ index ca4bb84e..c75902cd 100644
  bool ksu_su_compat_enabled __read_mostly = true;
  
  static int su_compat_feature_get(u64 *value)
-@@ -71,112 +81,192 @@ static char __user *ksud_user_path(void)
+@@ -71,112 +82,207 @@ static char __user *ksud_user_path(void)
      return userspace_stack_buffer(ksud_path, sizeof(ksud_path));
  }
  
@@ -412,30 +546,27 @@ index ca4bb84e..c75902cd 100644
 -    if (unlikely(!memcmp(path, su, sizeof(su)))) {
 -        pr_info("faccessat su->sh!\n");
 -        *filename_user = sh_user_path();
--    }
 +		return compat_ptr(compat);
 +	}
 +#endif
- 
--    return 0;
++
 +	if (get_user(native, argv.ptr.native + nr))
 +		return ERR_PTR(-EFAULT);
 +
 +	return native;
- }
- 
--int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
++}
++
 +/*
 + * return 0 -> No further checks should be required afterwards
 + * return non-zero -> Further checks should be continued afterwards
 + */
-+int ksu_handle_execveat_init(struct filename *filename, struct user_arg_ptr *argv_user) {
++int ksu_handle_execveat_init(struct filename *filename, struct user_arg_ptr *argv_user, struct user_arg_ptr *envp_user) {
 +    if (current->pid != 1 && is_init(get_current_cred())) {
++        int ret;
 +        if (unlikely(strcmp(filename->name, KSUD_PATH) == 0)) {
 +            char tmp_filename[SUSFS_MAX_LEN_PATHNAME] = {0};
 +            const char __user *argv_user_ptr = get_user_arg_ptr(*argv_user, 0);
 +            struct ksu_sulog_pending_event *pending_sucompat = NULL;
-+            int ret;
 +
 +            pr_info("hook_manager: escape to root for init executing ksud: %d\n", current->pid);
 +            ret = escape_to_root_for_init();
@@ -459,14 +590,31 @@ index ca4bb84e..c75902cd 100644
 +            susfs_set_current_proc_umounted();
 +            return 0;
 +        }
-+        return -EINVAL;
-+    }
-+    return -EINVAL;
-+}
 +
++#ifdef CONFIG_COMPAT
++        if (unlikely(envp_user->is_compat))
++            ret = ksu_adb_root_handle_execve(filename->name, (void ***)&envp_user->ptr.compat);
++        else
++            ret = ksu_adb_root_handle_execve(filename->name, (void ***)&envp_user->ptr.native);    
++#else
++        ret = ksu_adb_root_handle_execve(filename->name, (void ***)&envp_user->ptr.native);
++#endif
++
++        if (ret) {
++            pr_err("adb root failed: %d\n", ret);
++            return ret;
++        }
++        return ret;
+     }
+ 
+-    return 0;
++    return -EINVAL;
+ }
+ 
+-int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
 +// the call from execve_handler_pre won't provided correct value for __never_use_argument, use them after fix execve_handler_pre, keeping them for consistence for manually patched code
 +int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
-+                 void *argv_user, void *__never_use_envp,
++                 void *argv_user, void *envp_user,
 +                 int *__never_use_flags)
  {
 -    // const char sh[] = SH_PATH;
@@ -487,7 +635,7 @@ index ca4bb84e..c75902cd 100644
 -    }
  
 -    if (unlikely(!filename_user)) {
-+    if (!ksu_handle_execveat_init(filename, (struct user_arg_ptr*)argv_user))
++    if (!ksu_handle_execveat_init(filename, (struct user_arg_ptr*)argv_user, (struct user_arg_ptr*)envp_user))
 +        return 0;
 +
 +    if (likely(memcmp(filename->name, su_path, sizeof(su_path))))
@@ -514,9 +662,7 @@ index ca4bb84e..c75902cd 100644
 +    ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
 +    return 0;
 +}
- 
--    if (unlikely(!memcmp(path, su, sizeof(su)))) {
--        pr_info("newfstatat su->sh!\n");
++
 +int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
 +            void *envp, int *flags)
 +{
@@ -533,7 +679,9 @@ index ca4bb84e..c75902cd 100644
 +    char path[sizeof(su_path) + 1] = {0};
 +
 +    strncpy_from_user(path, *filename_user, sizeof(path));
-+
+ 
+-    if (unlikely(!memcmp(path, su, sizeof(su)))) {
+-        pr_info("newfstatat su->sh!\n");
 +    if (unlikely(!memcmp(path, su_path, sizeof(su_path)))) {
 +        pr_info("ksu_handle_faccessat: su->sh!\n");
          *filename_user = sh_user_path();
@@ -664,7 +812,7 @@ index 1afba60f..ebee691b 100644
  #endif
 \ No newline at end of file
 diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
-index d3f3ac49..565ab66e 100644
+index d3f3ac49..98df2bc0 100644
 --- a/kernel/hook/setuid_hook.c
 +++ b/kernel/hook/setuid_hook.c
 @@ -11,6 +11,8 @@
@@ -676,7 +824,7 @@ index d3f3ac49..565ab66e 100644
  
  #include "policy/allowlist.h"
  #include "hook/setuid_hook.h"
-@@ -18,19 +20,60 @@
+@@ -18,19 +20,46 @@
  #include "manager/manager_identity.h"
  #include "infra/seccomp_cache.h"
  #include "supercall/supercall.h"
@@ -684,18 +832,6 @@ index d3f3ac49..565ab66e 100644
  #include "feature/kernel_umount.h"
  
 -int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
-+static inline bool is_zygote_isolated_service_uid(uid_t uid)
-+{
-+    uid %= 100000;
-+    return (uid >= 99000 && uid < 100000);
-+}
-+
-+static inline bool is_zygote_normal_app_uid(uid_t uid)
-+{
-+    uid %= 100000;
-+    return (uid >= 10000 && uid < 19999);
-+}
-+
 +extern u32 susfs_zygote_sid;
 +extern struct cred *ksu_cred;
 +
@@ -726,28 +862,31 @@ index d3f3ac49..565ab66e 100644
  
 -    pr_info("handle_setresuid from %d to %d\n", old_uid, new_uid);
 +    // Check if spawned process is isolated service first, and force to do umount if so
-+    if (is_zygote_isolated_service_uid(new_uid))
++    if (is_isolated_process(new_uid))
 +        goto do_umount;
  
 -    if (unlikely(is_uid_manager(new_uid))) {
 +    // - Since ksu maanger app uid is excluded in allow_list_arr, so ksu_uid_should_umount(manager_uid)
 +    //   will always return true, that's why we need to explicitly check if new_uid belongs to
 +    //   ksu manager
-+    if (likely(ksu_is_manager_appid_valid()) &&
-+        unlikely(ksu_get_manager_appid() == new_uid % PER_USER_RANGE))
-+    {
++    if (is_uid_manager(new_uid)) {
          spin_lock_irq(&current->sighand->siglock);
          ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
 -        ksu_set_task_tracepoint_flag(current);
          spin_unlock_irq(&current->sighand->siglock);
  
          pr_info("install fd for manager: %d\n", new_uid);
-@@ -38,20 +81,30 @@ int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
+@@ -38,20 +67,35 @@ int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
          return 0;
      }
  
++    if (unlikely(new_uid == WEBVIEW_ZYGOTE_UID)) {
++        // we should not umount for webview zygote
++        return 0;
++    }
++
 +    // Check if spawned process is normal user app and needs to be umounted
-+    if (likely(is_zygote_normal_app_uid(new_uid) && ksu_uid_should_umount(new_uid)))
++    if (likely(is_appuid(new_uid) && ksu_uid_should_umount(new_uid)))
 +        goto do_umount;
 +
      if (ksu_is_allow_uid_for_current(new_uid)) {
@@ -800,8 +939,27 @@ index 17f9b826..be81e626 100644
  extern bool allow_shell;
  
  static inline int startswith(char *s, char *prefix)
+diff --git a/kernel/policy/allowlist.c b/kernel/policy/allowlist.c
+index e7375e5d..0a172220 100644
+--- a/kernel/policy/allowlist.c
++++ b/kernel/policy/allowlist.c
+@@ -327,14 +327,6 @@ bool ksu_uid_should_umount(uid_t uid)
+ #ifndef CONFIG_KSU_DISABLE_POLICY
+     struct app_profile profile = { .current_uid = uid };
+ #endif
+-    if (unlikely(is_uid_manager(uid))) {
+-        // we should not umount on manager!
+-        return false;
+-    }
+-    if (unlikely(uid == WEBVIEW_ZYGOTE_UID)) {
+-        // we should not umount for webview zygote
+-        return false;
+-    }
+ #ifdef CONFIG_KSU_DISABLE_POLICY
+     return !__ksu_is_allow_uid(uid);
+ #else
 diff --git a/kernel/policy/app_profile.c b/kernel/policy/app_profile.c
-index 88a5b0d5..b46d2a56 100644
+index 88a5b0d5..58f8bc80 100644
 --- a/kernel/policy/app_profile.c
 +++ b/kernel/policy/app_profile.c
 @@ -14,7 +14,6 @@
@@ -821,6 +979,15 @@ index 88a5b0d5..b46d2a56 100644
      struct root_profile profile;
      struct user_struct *new_user;
  
+@@ -117,7 +114,7 @@ int escape_with_root_profile(void)
+         return -ENOMEM;
+     }
+ 
+-    if (cred->euid.val == 0) {
++    if (susfs_is_current_ksu_domain()) {
+         pr_warn("Already root, don't escape!\n");
+         goto out_abort_creds;
+     }
 @@ -181,10 +178,6 @@ int escape_with_root_profile(void)
  
      disable_seccomp();
@@ -925,7 +1092,7 @@ index 62cfaabf..ba238519 100644
 +                             struct user_arg_ptr *envp, int *flags);
  #endif
 diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
-index 25933bb6..8f55e13c 100644
+index 25933bb6..ffe0d2c0 100644
 --- a/kernel/runtime/ksud_integration.c
 +++ b/kernel/runtime/ksud_integration.c
 @@ -9,7 +9,6 @@
@@ -1017,7 +1184,7 @@ index 25933bb6..8f55e13c 100644
  }
  
 -void ksu_handle_execveat_ksud(const char *path, struct user_arg_ptr *argv)
-+extern int ksu_handle_execveat_init(struct filename *filename, struct user_arg_ptr *argv_user);
++extern int ksu_handle_execveat_init(struct filename *filename, struct user_arg_ptr *argv_user, struct user_arg_ptr *envp_user);
 +
 +// IMPORTANT NOTE: the call from execve_handler_pre WON'T provided correct value for envp and flags in GKI version
 +int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
@@ -1071,7 +1238,7 @@ index 25933bb6..8f55e13c 100644
      }
 +
 +    // - We need to run ksu_handle_execveat_init() at the very end in case the above checks are skipped
-+    (void)ksu_handle_execveat_init(filename, argv);
++    (void)ksu_handle_execveat_init(filename, argv, envp);
 +
 +    return 0;
  }
@@ -1278,10 +1445,10 @@ index 25933bb6..8f55e13c 100644
 -    unregister_kprobe(&input_event_kp);
  }
 diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
-index ed568008..8857a22d 100644
+index 2fabb71a..bb259e5d 100644
 --- a/kernel/selinux/rules.c
 +++ b/kernel/selinux/rules.c
-@@ -123,8 +123,14 @@ void apply_kernelsu_rules()
+@@ -128,8 +128,14 @@ void apply_kernelsu_rules()
      ksu_destroy_sepolicy(old_pol);
  
      reset_avc_cache();
@@ -1297,12 +1464,12 @@ index ed568008..8857a22d 100644
  
  #define KSU_SEPOLICY_MAX_BATCH_SIZE (8U * 1024U * 1024U)
 diff --git a/kernel/selinux/selinux.c b/kernel/selinux/selinux.c
-index 599ad9c6..59558ff3 100644
+index 90a0de0d..1b48aa44 100644
 --- a/kernel/selinux/selinux.c
 +++ b/kernel/selinux/selinux.c
-@@ -201,3 +201,97 @@ bool is_init(const struct cred *cred)
- {
-     return is_sid_match(cred, cached_init_sid, INIT_CONTEXT);
+@@ -220,3 +220,97 @@ void escape_to_root_for_adb_root(void)
+     }
+     commit_creds(cred);
  }
 +
 +#define KERNEL_INIT_DOMAIN "u:r:init:s0"
@@ -1399,10 +1566,10 @@ index 599ad9c6..59558ff3 100644
 +    susfs_set_sid(KERNEL_PRIV_APP_DOMAIN, &susfs_priv_app_sid);
 +}
 diff --git a/kernel/selinux/selinux.h b/kernel/selinux/selinux.h
-index 08488da6..9aa0ae48 100644
+index a17ed226..ab4d451f 100644
 --- a/kernel/selinux/selinux.h
 +++ b/kernel/selinux/selinux.h
-@@ -37,4 +37,15 @@ void setup_ksu_cred();
+@@ -39,4 +39,15 @@ void escape_to_root_for_adb_root();
  
  extern u32 ksu_file_sid;
  

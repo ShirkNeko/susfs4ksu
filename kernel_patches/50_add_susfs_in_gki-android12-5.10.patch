@@ -1964,27 +1964,26 @@ index d42b44dc0..b2fa95d3e 100644
  	error = statfs_by_dentry(path->dentry, buf);
  	if (!error)
 diff --git a/kernel/kallsyms.c b/kernel/kallsyms.c
-index 126d4433d..bfff2100e 100644
+index 126d4433d..a03ac4cac 100644
 --- a/kernel/kallsyms.c
 +++ b/kernel/kallsyms.c
-@@ -673,6 +673,10 @@ static void s_stop(struct seq_file *m, void *p)
- {
- }
- 
+@@ -26,6 +26,9 @@
+ #include <linux/ftrace.h>
+ #include <linux/kprobes.h>
+ #include <linux/compiler.h>
 +#ifdef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-+extern bool susfs_starts_with(const char *str, const char *prefix);
-+#endif
-+
- static int s_show(struct seq_file *m, void *p)
- {
- 	void *value;
-@@ -696,8 +700,36 @@ static int s_show(struct seq_file *m, void *p)
++#include <linux/susfs_def.h>
++#endif // #ifdef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+ 
+ /*
+  * These will be re-linked against their real values
+@@ -696,8 +699,36 @@ static int s_show(struct seq_file *m, void *p)
  		seq_printf(m, "%px %c %s\t[%s]\n", value,
  			   type, iter->name, iter->module_name);
  	} else
 +#ifndef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-+		seq_printf(m, "%px %c %s\n", value,
-+			   iter->type, iter->name);
+ 		seq_printf(m, "%px %c %s\n", value,
+ 			   iter->type, iter->name);
 +#else
 +	{
 +		if (susfs_starts_with(iter->name, "ksu_") ||
@@ -2008,8 +2007,8 @@ index 126d4433d..bfff2100e 100644
 +		{
 +			return 0;
 +		}
- 		seq_printf(m, "%px %c %s\n", value,
- 			   iter->type, iter->name);
++		seq_printf(m, "%px %c %s\n", value,
++			   iter->type, iter->name);
 +	}
 +#endif
  	return 0;

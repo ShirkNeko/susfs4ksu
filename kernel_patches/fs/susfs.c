@@ -34,14 +34,6 @@ bool susfs_is_log_enabled __read_mostly = true;
 #define SUSFS_LOGE(fmt, ...) 
 #endif
 
-bool susfs_starts_with(const char *str, const char *prefix) {
-    while (*prefix) {
-        if (*str++ != *prefix++)
-            return false;
-    }
-    return true;
-}
-
 #ifndef FUSE_SUPER_MAGIC
 #define FUSE_SUPER_MAGIC 0x65735546
 #endif
