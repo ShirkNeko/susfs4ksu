@@ -42,6 +42,11 @@ int add_sus_map(int argc, char *argv[]) {
 		return -EINVAL;
 	}
 
+	if (*argv[2] == '\0') {
+		log("[-] argv[2] is empty'\n");
+		return -EINVAL;
+	}
+
 	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
 	info.err = ERR_CMD_NOT_SUPPORTED;
 	syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_ADD_SUS_MAP, &info);
