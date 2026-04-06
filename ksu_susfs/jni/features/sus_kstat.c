@@ -109,6 +109,7 @@ static void print_help(void){
 int add_sus_kstat_statically(int argc, char *argv[]) {
 	struct st_susfs_sus_kstat info = {0};
 	struct stat sb;
+	char resolved_pathname[PATH_MAX];
 	char* endptr;
 	unsigned long ino, dev, nlink, size, atime, atime_nsec, mtime, mtime_nsec, ctime, ctime_nsec, blksize;
 	long blocks;
@@ -117,10 +118,21 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 		print_help();
 		return -EINVAL;
 	}
+
+	if (*argv[2] == '\0') {
+		log("[-] argv[2] is empty'\n");
+		return -EINVAL;
+	}
+
+	if (!realpath(argv[2], resolved_pathname)) {
+		log("[-] failed to get realpath from path: %s\n", argv[2]);
+		return errno;
+	}
+
 	/* get the stat of the target path first */
-	info.err = get_file_stat(argv[2], &sb);
+	info.err = get_file_stat(resolved_pathname, &sb);
 	if (info.err) {
-		log("[-] failed to get stat from path: '%s'\n", argv[2]);
+		log("[-] failed to get stat from path: '%s'\n", resolved_pathname);
 		return info.err;
 	}
 	/* it is statically */
@@ -248,7 +260,7 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 		info.flags |= KSTAT_SPOOF_BLKSIZE;
 	}
 
-	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
+	strncpy(info.target_pathname, resolved_pathname, SUSFS_MAX_LEN_PATHNAME-1);
 	copy_from_stat_to_sus_kstat(&info, &sb);
 	info.err = ERR_CMD_NOT_SUPPORTED;
 	syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY, &info);
@@ -259,18 +271,29 @@ int add_sus_kstat_statically(int argc, char *argv[]) {
 int add_sus_kstat(int argc, char *argv[]) {
 	struct st_susfs_sus_kstat info = {0};
 	struct stat sb;
+	char resolved_pathname[PATH_MAX];
 
 	if (argc != 3) {
 		print_help();
 		return -EINVAL;
 	}
 
-	info.err = get_file_stat(argv[2], &sb);
+	if (*argv[2] == '\0') {
+		log("[-] argv[2] is empty'\n");
+		return -EINVAL;
+	}
+
+	if (!realpath(argv[2], resolved_pathname)) {
+		log("[-] failed to get realpath from path: %s\n", argv[2]);
+		return errno;
+	}
+
+	info.err = get_file_stat(resolved_pathname, &sb);
 	if (info.err) {
-		log("[-] failed to get stat from path: '%s'\n", argv[2]);
+		log("[-] failed to get stat from path: '%s'\n", resolved_pathname);
 		return info.err;
 	}
-	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
+	strncpy(info.target_pathname, resolved_pathname, SUSFS_MAX_LEN_PATHNAME-1);
 	info.is_statically = false;
 	info.target_ino = sb.st_ino;
 	info.flags |= KSTAT_AUTO_SPOOF;
@@ -284,18 +307,29 @@ int add_sus_kstat(int argc, char *argv[]) {
 int update_sus_kstat(int argc, char *argv[]) {
 	struct st_susfs_sus_kstat info = {0};
 	struct stat sb;
+	char resolved_pathname[PATH_MAX];
 
 	if (argc != 3) {
 		print_help();
 		return -EINVAL;
 	}
 
-	info.err = get_file_stat(argv[2], &sb);
+	if (*argv[2] == '\0') {
+		log("[-] argv[2] is empty'\n");
+		return -EINVAL;
+	}
+
+	if (!realpath(argv[2], resolved_pathname)) {
+		log("[-] failed to get realpath from path: %s\n", argv[2]);
+		return errno;
+	}
+
+	info.err = get_file_stat(resolved_pathname, &sb);
 	if (info.err) {
-		log("[-] failed to get stat from path: '%s'\n", argv[2]);
+		log("[-] failed to get stat from path: '%s'\n", resolved_pathname);
 		return info.err;
 	}
-	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
+	strncpy(info.target_pathname, resolved_pathname, SUSFS_MAX_LEN_PATHNAME-1);
 	info.is_statically = false;
 	info.target_ino = sb.st_ino;
 	info.flags |= KSTAT_AUTO_SPOOF;
@@ -309,18 +343,29 @@ int update_sus_kstat(int argc, char *argv[]) {
 int update_sus_kstat_full_clone(int argc, char *argv[]) {
 	struct st_susfs_sus_kstat info = {0};
 	struct stat sb;
+	char resolved_pathname[PATH_MAX];
 
 	if (argc != 3) {
 		print_help();
 		return -EINVAL;
 	}
 
-	info.err = get_file_stat(argv[2], &sb);
+	if (*argv[2] == '\0') {
+		log("[-] argv[2] is empty'\n");
+		return -EINVAL;
+	}
+
+	if (!realpath(argv[2], resolved_pathname)) {
+		log("[-] failed to get realpath from path: %s\n", argv[2]);
+		return errno;
+	}
+
+	info.err = get_file_stat(resolved_pathname, &sb);
 	if (info.err) {
-		log("[-] failed to get stat from path: '%s'\n", argv[2]);
+		log("[-] failed to get stat from path: '%s'\n", resolved_pathname);
 		return info.err;
 	}
-	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
+	strncpy(info.target_pathname, resolved_pathname, SUSFS_MAX_LEN_PATHNAME-1);
 	info.is_statically = false;
 	info.target_ino = sb.st_ino;
 	info.flags |= KSTAT_AUTO_SPOOF_FULL_CLONE;

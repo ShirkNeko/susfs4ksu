@@ -43,6 +43,16 @@ int set_uname(int argc, char *argv[]) {
 		return -EINVAL;
 	}
 
+	if (*argv[2] == '\0') {
+		log("[-] argv[2] is empty'\n");
+		return -EINVAL;
+	}
+
+	if (*argv[3] == '\0') {
+		log("[-] argv[3] is empty'\n");
+		return -EINVAL;
+	}
+
 	strncpy(info.release, argv[2], __NEW_UTS_LEN);
 	strncpy(info.version, argv[3], __NEW_UTS_LEN);
 	info.err = ERR_CMD_NOT_SUPPORTED;
