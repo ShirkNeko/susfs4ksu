@@ -1586,10 +1586,10 @@ index a17ed226..ab4d451f 100644
 +
  #endif
 diff --git a/kernel/sulog/event.c b/kernel/sulog/event.c
-index 4a767b81..0277ea9e 100644
+index 51d6fa84..9f996cc0 100644
 --- a/kernel/sulog/event.c
 +++ b/kernel/sulog/event.c
-@@ -20,18 +20,6 @@
+@@ -25,18 +25,6 @@
  #define KSU_SULOG_MAX_ARG_CHUNK 256U
  #define KSU_SULOG_MAX_FILENAME_LEN 256U
  
@@ -1608,7 +1608,7 @@ index 4a767b81..0277ea9e 100644
  static struct ksu_event_queue sulog_queue;
  
  struct ksu_sulog_pending_event {
-@@ -62,25 +50,25 @@ static struct user_arg_ptr ksu_sulog_user_argv(const char __user *const __user *
+@@ -67,25 +55,25 @@ static struct user_arg_ptr ksu_sulog_user_argv(const char __user *const __user *
      return argv;
  }
  
@@ -1645,7 +1645,7 @@ index 4a767b81..0277ea9e 100644
  }
  
  static void ksu_sulog_fill_task_info(struct ksu_sulog_event *event, __u16 event_type, int retval)
-@@ -111,6 +99,28 @@ static __u32 ksu_sulog_copy_empty_string(char *dst)
+@@ -116,6 +104,28 @@ static __u32 ksu_sulog_copy_empty_string(char *dst)
      return 1;
  }
  
@@ -1674,7 +1674,7 @@ index 4a767b81..0277ea9e 100644
  static __u32 ksu_sulog_copy_filename(const char __user *filename_user, char *dst, __u32 dst_len)
  {
      long ret;
-@@ -133,9 +143,8 @@ static __u32 ksu_sulog_copy_filename(const char __user *filename_user, char *dst
+@@ -138,9 +148,8 @@ static __u32 ksu_sulog_copy_filename(const char __user *filename_user, char *dst
      return ret + 1;
  }
  
@@ -1685,7 +1685,7 @@ index 4a767b81..0277ea9e 100644
      char arg[KSU_SULOG_MAX_ARG_CHUNK];
      __u32 used = 0;
      int i;
-@@ -154,7 +163,7 @@ static __u32 ksu_sulog_flatten_argv(const char __user *const __user *argv_user,
+@@ -159,7 +168,7 @@ static __u32 ksu_sulog_flatten_argv(const char __user *const __user *argv_user,
          if (fatal_signal_pending(current))
              break;
  
@@ -1694,7 +1694,7 @@ index 4a767b81..0277ea9e 100644
          if (!arg_user)
              break;
          if (IS_ERR(arg_user))
-@@ -190,8 +199,8 @@ static __u32 ksu_sulog_flatten_argv(const char __user *const __user *argv_user,
+@@ -195,8 +204,8 @@ static __u32 ksu_sulog_flatten_argv(const char __user *const __user *argv_user,
      return used + 1;
  }
  
@@ -1705,7 +1705,7 @@ index 4a767b81..0277ea9e 100644
  {
      struct ksu_sulog_pending_event *pending = NULL;
      struct ksu_sulog_event *event;
-@@ -202,6 +211,7 @@ static struct ksu_sulog_pending_event *ksu_sulog_capture(__u16 event_type, const
+@@ -207,6 +216,7 @@ static struct ksu_sulog_pending_event *ksu_sulog_capture(__u16 event_type, const
      __u32 remaining;
      char *filename_buf;
      char *argv_buf;
@@ -1713,7 +1713,7 @@ index 4a767b81..0277ea9e 100644
      if (!ksu_sulog_is_enabled())
          return NULL;
  
-@@ -218,7 +228,7 @@ static struct ksu_sulog_pending_event *ksu_sulog_capture(__u16 event_type, const
+@@ -223,7 +233,7 @@ static struct ksu_sulog_pending_event *ksu_sulog_capture(__u16 event_type, const
  
      remaining = KSU_SULOG_MAX_PAYLOAD_LEN - sizeof(*event);
      filename_buf = (char *)payload + sizeof(*event);
@@ -1722,7 +1722,7 @@ index 4a767b81..0277ea9e 100644
      if (!filename_len)
          goto out_free_payload;
  
-@@ -283,16 +293,10 @@ static void ksu_sulog_free_pending(struct ksu_sulog_pending_event *pending)
+@@ -288,16 +298,10 @@ static void ksu_sulog_free_pending(struct ksu_sulog_pending_event *pending)
      kfree(pending);
  }
  
