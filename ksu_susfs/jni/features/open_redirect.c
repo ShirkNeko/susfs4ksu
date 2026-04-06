@@ -60,6 +60,26 @@ int add_open_redirect(int argc, char *argv[]) {
 		return -EINVAL;
 	}
 
+	if (*argv[2] == '\0') {
+		log("[-] argv[2] is empty'\n");
+		return -EINVAL;
+	}
+
+	if (*argv[3] == '\0') {
+		log("[-] argv[3] is empty'\n");
+		return -EINVAL;
+	}
+
+	if (!realpath(argv[2], target_pathname)) {
+		log("[-] failed to get realpath from path: %s\n", argv[2]);
+		return errno;
+	}
+
+	if (!realpath(argv[3], redirected_pathname)) {
+		log("[-] failed to get realpath from path: %s\n", argv[3]);
+		return errno;
+	}
+
 	uid_scheme = strtol(argv[4], &endptr, 10);
 	if (*endptr != '\0') {
 		print_help();
@@ -72,8 +92,8 @@ int add_open_redirect(int argc, char *argv[]) {
 	}
 
 	info.uid_scheme = uid_scheme;
-	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
-	strncpy(info.redirected_pathname, argv[3], SUSFS_MAX_LEN_PATHNAME-1);
+	strncpy(info.target_pathname, target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+	strncpy(info.redirected_pathname, redirected_pathname, SUSFS_MAX_LEN_PATHNAME-1);
 	info.err = ERR_CMD_NOT_SUPPORTED;
 	syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_ADD_OPEN_REDIRECT, &info);
 	PRT_MSG_IF_CMD_NOT_SUPPORTED(info.err, CMD_SUSFS_ADD_OPEN_REDIRECT);

@@ -32,7 +32,7 @@ static void print_help(void){
 
 int set_cmdline_or_bootconfig(int argc, char *argv[]) {
 	struct st_susfs_spoof_cmdline_or_bootconfig *info = malloc(sizeof(struct st_susfs_spoof_cmdline_or_bootconfig));
-	char abs_path[PATH_MAX], *p_abs_path;
+	char resolved_pathname[PATH_MAX];
 	FILE *file;
 	long file_size;
 	size_t read_size; 
@@ -47,14 +47,19 @@ int set_cmdline_or_bootconfig(int argc, char *argv[]) {
 		perror("malloc");
 		return -ENOMEM;
 	}
+
+	if (*argv[2] == '\0') {
+		log("[-] argv[2] is empty'\n");
+		return -EINVAL;
+	}
+
 	memset(info, 0, sizeof(struct st_susfs_spoof_cmdline_or_bootconfig));
-	p_abs_path = realpath(argv[2], abs_path);
-	if (p_abs_path == NULL) {
+	if (!realpath(argv[2], resolved_pathname)) {
 		perror("realpath");
 		free(info);
 		return errno;
 	}
-	file = fopen(abs_path, "rb");
+	file = fopen(resolved_pathname, "rb");
 	if (file == NULL) {
 		perror("error opening file");
 		free(info);
