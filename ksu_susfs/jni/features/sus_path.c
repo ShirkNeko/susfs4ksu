@@ -39,28 +39,7 @@ static void print_help(void){
 
 int add_sus_path(int argc, char *argv[]) {
 	struct st_susfs_sus_path info = {0};
-	struct stat sb;
-
-	if (argc != 3) {
-		print_help();
-		return -EINVAL;
-	}
-
-	info.err = get_file_stat(argv[2], &sb);
-	if (info.err) {
-		log("[-] failed to get stat from path: '%s'\n", argv[2]);
-		return info.err;
-	}
-	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
-	info.err = ERR_CMD_NOT_SUPPORTED;
-	syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_ADD_SUS_PATH, &info);
-	PRT_MSG_IF_CMD_NOT_SUPPORTED(info.err, CMD_SUSFS_ADD_SUS_PATH);
-	return info.err;
-}
-
-int add_sus_path_loop(int argc, char *argv[]) {
-	struct st_susfs_sus_path info = {0};
-	struct stat sb = {0};
+	char resolved_pathname[PATH_MAX];
 
 	if (argc != 3) {
 		print_help();
@@ -72,7 +51,38 @@ int add_sus_path_loop(int argc, char *argv[]) {
 		return -EINVAL;
 	}
 
-	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
+	if (!realpath(argv[2], resolved_pathname)) {
+		log("[-] failed to get realpath from path: %s\n", argv[2]);
+		return errno;
+	}
+
+	strncpy(info.target_pathname, resolved_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+	info.err = ERR_CMD_NOT_SUPPORTED;
+	syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_ADD_SUS_PATH, &info);
+	PRT_MSG_IF_CMD_NOT_SUPPORTED(info.err, CMD_SUSFS_ADD_SUS_PATH);
+	return info.err;
+}
+
+int add_sus_path_loop(int argc, char *argv[]) {
+	struct st_susfs_sus_path info = {0};
+	char resolved_pathname[PATH_MAX];
+
+	if (argc != 3) {
+		print_help();
+		return -EINVAL;
+	}
+
+	if (*argv[2] == '\0') {
+		log("[-] argv[2] is empty'\n");
+		return -EINVAL;
+	}
+
+	if (!realpath(argv[2], resolved_pathname)) {
+		log("[-] failed to get realpath from path: %s\n", argv[2]);
+		return errno;
+	}
+
+	strncpy(info.target_pathname, resolved_pathname, SUSFS_MAX_LEN_PATHNAME-1);
 	info.err = ERR_CMD_NOT_SUPPORTED;
 	syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_ADD_SUS_PATH_LOOP, &info);
 	PRT_MSG_IF_CMD_NOT_SUPPORTED(info.err, CMD_SUSFS_ADD_SUS_PATH_LOOP);
