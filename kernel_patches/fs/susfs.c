@@ -306,6 +306,7 @@ out_path_put_path:
 void susfs_add_sus_kstat(void __user **user_info) {
 	struct st_susfs_sus_kstat info = {0};
 	struct st_susfs_sus_kstat_hlist *new_entry, *tmp_entry;
+	struct hlist_node *tmp_hlist_node;
 
 	if (copy_from_user(&info, (struct st_susfs_sus_kstat __user*)*user_info, sizeof(info))) {
 		info.err = -EFAULT;
@@ -323,25 +324,6 @@ void susfs_add_sus_kstat(void __user **user_info) {
 		goto out_copy_to_user;
 	}
 
-	// If it is added statically, check for duplicated entry, and remove it first if so
-	if (info.is_statically) {
-		spin_lock(&susfs_spin_lock_sus_kstat);
-		hash_for_each_possible(SUS_KSTAT_HLIST, tmp_entry, node, info.target_ino) {
-			if (!strcmp(tmp_entry->info.target_pathname, info.target_pathname)) {
-				memcpy(&new_entry->info, &tmp_entry->info, sizeof(tmp_entry->info));
-				new_entry->target_ino = info.target_ino;
-				new_entry->info.target_ino = info.target_ino;
-				hash_del_rcu(&tmp_entry->node);
-				spin_unlock(&susfs_spin_lock_sus_kstat);
-				synchronize_rcu();
-				kfree(tmp_entry);
-				goto out_add_new_entry;
-			}
-		}
-		spin_unlock(&susfs_spin_lock_sus_kstat);
-	}
-
-out_add_new_entry:
 #if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)
 #ifdef CONFIG_MIPS
 	info.spoofed_dev = new_decode_dev(info.spoofed_dev);
@@ -355,13 +337,53 @@ out_add_new_entry:
 	new_entry->target_ino = info.target_ino;
 	memcpy(&new_entry->info, &info, sizeof(info));
 
+	// statically or not, check for duplicated entry, and remove it first if so
+	spin_lock(&susfs_spin_lock_sus_kstat);
+	hash_for_each_possible_safe(SUS_KSTAT_HLIST, tmp_entry, tmp_hlist_node, node, info.target_ino) {
+		if (!strcmp(tmp_entry->info.target_pathname, info.target_pathname)) {
+			info.err = susfs_mark_inode_sus_kstat(new_entry->info.target_pathname, new_entry);
+			if (info.err) {
+				spin_unlock(&susfs_spin_lock_sus_kstat);
+				kfree(new_entry);
+				goto out_copy_to_user;
+			}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+			SUSFS_LOGI("is_fuse: %d, is_statically: '%d', target_ino: '%lu', target_pathname: '%s', spoofed_ino: '%lu', spoofed_dev: '%lu', spoofed_nlink: '%u', spoofed_size: '%llu', spoofed_atime_tv_sec: '%ld', spoofed_mtime_tv_sec: '%ld', spoofed_ctime_tv_sec: '%ld', spoofed_atime_tv_nsec: '%ld', spoofed_mtime_tv_nsec: '%ld', spoofed_ctime_tv_nsec: '%ld', spoofed_blksize: '%lu', spoofed_blocks: '%llu', is successfully added to SUS_KSTAT_HLIST\n",
+					new_entry->is_fuse,
+					new_entry->info.is_statically, new_entry->info.target_ino, new_entry->info.target_pathname,
+					new_entry->info.spoofed_ino, new_entry->info.spoofed_dev,
+					new_entry->info.spoofed_nlink, new_entry->info.spoofed_size,
+					new_entry->info.spoofed_atime_tv_sec, new_entry->info.spoofed_mtime_tv_sec, new_entry->info.spoofed_ctime_tv_sec,
+					new_entry->info.spoofed_atime_tv_nsec, new_entry->info.spoofed_mtime_tv_nsec, new_entry->info.spoofed_ctime_tv_nsec,
+					new_entry->info.spoofed_blksize, new_entry->info.spoofed_blocks);
+#else
+			SUSFS_LOGI("is_fuse: %d, is_statically: '%d', target_ino: '%lu', target_pathname: '%s', spoofed_ino: '%lu', spoofed_dev: '%lu', spoofed_nlink: '%u', spoofed_size: '%u', spoofed_atime_tv_sec: '%ld', spoofed_mtime_tv_sec: '%ld', spoofed_ctime_tv_sec: '%ld', spoofed_atime_tv_nsec: '%ld', spoofed_mtime_tv_nsec: '%ld', spoofed_ctime_tv_nsec: '%ld', spoofed_blksize: '%lu', spoofed_blocks: '%llu', is successfully added to SUS_KSTAT_HLIST\n",
+					new_entry->is_fuse,
+					new_entry->info.is_statically, new_entry->info.target_ino, new_entry->info.target_pathname,
+					new_entry->info.spoofed_ino, new_entry->info.spoofed_dev,
+					new_entry->info.spoofed_nlink, new_entry->info.spoofed_size,
+					new_entry->info.spoofed_atime_tv_sec, new_entry->info.spoofed_mtime_tv_sec, new_entry->info.spoofed_ctime_tv_sec,
+					new_entry->info.spoofed_atime_tv_nsec, new_entry->info.spoofed_mtime_tv_nsec, new_entry->info.spoofed_ctime_tv_nsec,
+					new_entry->info.spoofed_blksize, new_entry->info.spoofed_blocks);
+#endif
+			hash_del_rcu(&tmp_entry->node);
+			hash_add_rcu(SUS_KSTAT_HLIST, &new_entry->node, info.target_ino);
+			spin_unlock(&susfs_spin_lock_sus_kstat);
+			synchronize_rcu();
+			kfree(tmp_entry);
+			info.err = 0;
+			goto out_copy_to_user;
+		}
+	}
+
+	// if no duplicated, add it to list
 	info.err = susfs_mark_inode_sus_kstat(new_entry->info.target_pathname, new_entry);
 	if (info.err) {
+		spin_unlock(&susfs_spin_lock_sus_kstat);
 		kfree(new_entry);
 		goto out_copy_to_user;
 	}
 
-	spin_lock(&susfs_spin_lock_sus_kstat);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
 	SUSFS_LOGI("is_fuse: %d, is_statically: '%d', target_ino: '%lu', target_pathname: '%s', spoofed_ino: '%lu', spoofed_dev: '%lu', spoofed_nlink: '%u', spoofed_size: '%llu', spoofed_atime_tv_sec: '%ld', spoofed_mtime_tv_sec: '%ld', spoofed_ctime_tv_sec: '%ld', spoofed_atime_tv_nsec: '%ld', spoofed_mtime_tv_nsec: '%ld', spoofed_ctime_tv_nsec: '%ld', spoofed_blksize: '%lu', spoofed_blocks: '%llu', is successfully added to SUS_KSTAT_HLIST\n",
 			new_entry->is_fuse,
@@ -398,6 +420,8 @@ out_copy_to_user:
 void susfs_update_sus_kstat(void __user **user_info) {
 	struct st_susfs_sus_kstat info = {0};
 	struct st_susfs_sus_kstat_hlist *new_entry, *tmp_entry;
+	struct hlist_node *tmp_hlist_node;
+	int bkt;
 
 	if (copy_from_user(&info, (struct st_susfs_sus_kstat __user*)*user_info, sizeof(info))) {
 		info.err = -EFAULT;
@@ -410,36 +434,35 @@ void susfs_update_sus_kstat(void __user **user_info) {
 		goto out_copy_to_user;
 	}
 
-
+	// check for added entry, do the update only if entry is found.
 	spin_lock(&susfs_spin_lock_sus_kstat);
-	hash_for_each_possible(SUS_KSTAT_HLIST, tmp_entry, node, info.target_ino) {
+	// for update we have to use hash_for_each_safe() since the new target inode is changed already.
+	hash_for_each_safe(SUS_KSTAT_HLIST, bkt, tmp_hlist_node, tmp_entry, node) {
 		if (!strcmp(tmp_entry->info.target_pathname, info.target_pathname)) {
 			memcpy(&new_entry->info, &tmp_entry->info, sizeof(tmp_entry->info));
 			new_entry->target_ino = info.target_ino;
+			new_entry->target_dev = tmp_entry->target_dev;
+			new_entry->is_fuse = tmp_entry->is_fuse;
 			new_entry->info.target_ino = info.target_ino;
+			info.err = susfs_mark_inode_sus_kstat(new_entry->info.target_pathname, new_entry);
+			if (info.err) {
+				spin_unlock(&susfs_spin_lock_sus_kstat);
+				kfree(new_entry);
+				goto out_copy_to_user;
+			}
+			SUSFS_LOGI("updating target_ino from '%lu' to '%lu' for pathname: '%s' in SUS_KSTAT_HLIST\n",
+					tmp_entry->target_ino, new_entry->target_ino, new_entry->info.target_pathname);
 			hash_del_rcu(&tmp_entry->node);
+			hash_add_rcu(SUS_KSTAT_HLIST, &new_entry->node, info.target_ino);
 			spin_unlock(&susfs_spin_lock_sus_kstat);
 			synchronize_rcu();
 			kfree(tmp_entry);
-			goto out_add_new_entry;
+			info.err = 0;
+			goto out_copy_to_user;
 		}
 	}
 	spin_unlock(&susfs_spin_lock_sus_kstat);
 	info.err = -ENOENT;
-	goto out_copy_to_user;
-
-out_add_new_entry:
-	info.err = susfs_mark_inode_sus_kstat(new_entry->info.target_pathname, new_entry);
-	if (info.err) {
-		kfree(new_entry);
-		goto out_copy_to_user;
-	}
-	SUSFS_LOGI("updating target_ino from '%lu' to '%lu' for pathname: '%s' in SUS_KSTAT_HLIST\n",
-					new_entry->info.target_ino, info.target_ino, info.target_pathname);
-	spin_lock(&susfs_spin_lock_sus_kstat);
-	hash_add_rcu(SUS_KSTAT_HLIST, &new_entry->node, info.target_ino);
-	spin_unlock(&susfs_spin_lock_sus_kstat);
-	info.err = 0;
 
 out_copy_to_user:
 	if (copy_to_user(&((struct st_susfs_sus_kstat __user*)*user_info)->err, &info.err, sizeof(info.err))) {
@@ -734,6 +757,7 @@ DEFINE_STATIC_SRCU(susfs_srcu_open_redirect);
 void susfs_add_open_redirect(void __user **user_info) {
 	struct st_susfs_open_redirect info = {0};
 	struct st_susfs_open_redirect_hlist *new_entry_target, *new_entry_redirected, *tmp_entry_target, *tmp_entry_redirected;
+	struct hlist_node *tmp_hlist_node;
 	struct path target_path, redirected_path;
 	struct inode *target_inode, *redirected_inode;
 	bool is_first_dup_found = false;
@@ -802,42 +826,6 @@ void susfs_add_open_redirect(void __user **user_info) {
 		goto out_path_put_target_path;
 	}
 
-	// check for existing entries, delete it first if so
-	spin_lock(&susfs_spin_lock_open_redirect);
-	hash_for_each_possible(OPEN_REDIRECT_HLIST, tmp_entry_target, node, target_inode->i_ino) {
-		if (!strcmp(tmp_entry_target->info.target_pathname, info.target_pathname)) {
-			if (tmp_entry_target->reversed_lookup_only) {
-				SUSFS_LOGE("duplicated '%s' cannot be removed/added because it is used for reversed lookup only\n", info.target_pathname);
-				spin_unlock(&susfs_spin_lock_open_redirect);
-				info.err = -EINVAL;
-				kfree(new_entry_redirected);
-				kfree(new_entry_target);
-				goto out_path_put_target_path;
-			}
-			is_first_dup_found = true;
-			hash_del_rcu(&tmp_entry_target->node);
-			break;
-		}
-	}
-
-	if (is_first_dup_found) {
-		hash_for_each_possible(OPEN_REDIRECT_HLIST, tmp_entry_redirected, node, redirected_inode->i_ino) {
-			if (!strcmp(tmp_entry_redirected->info.target_pathname, info.redirected_pathname)) {
-				is_second_dup_found = true;
-				hash_del_rcu(&tmp_entry_redirected->node);
-				break;
-			}
-		}
-		spin_unlock(&susfs_spin_lock_open_redirect);
-		synchronize_rcu();
-		if (is_second_dup_found)
-			kfree(tmp_entry_redirected);
-		kfree(tmp_entry_target);
-		goto out_add_new_entry;
-	}
-	spin_unlock(&susfs_spin_lock_open_redirect);
-
-out_add_new_entry:
 	new_entry_target->target_ino = target_inode->i_ino;
 	new_entry_target->target_dev = target_inode->i_sb->s_dev;
 	new_entry_target->redirected_ino = redirected_inode->i_ino;
@@ -859,7 +847,50 @@ out_add_new_entry:
 	strncpy(new_entry_redirected->info.target_pathname, info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
 	strncpy(new_entry_redirected->info.redirected_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
 
+	// check for existing entries, delete it first if so
 	spin_lock(&susfs_spin_lock_open_redirect);
+	hash_for_each_possible_safe(OPEN_REDIRECT_HLIST, tmp_entry_target, tmp_hlist_node, node, target_inode->i_ino) {
+		if (!strcmp(tmp_entry_target->info.target_pathname, info.target_pathname)) {
+			if (tmp_entry_target->reversed_lookup_only) {
+				SUSFS_LOGE("duplicated '%s' cannot be removed/added because it is used for reversed lookup only\n", info.target_pathname);
+				spin_unlock(&susfs_spin_lock_open_redirect);
+				info.err = -EINVAL;
+				kfree(new_entry_redirected);
+				kfree(new_entry_target);
+				goto out_path_put_target_path;
+			}
+			is_first_dup_found = true;
+			hash_del_rcu(&tmp_entry_target->node);
+			break;
+		}
+	}
+
+	if (is_first_dup_found) {
+		hash_for_each_possible_safe(OPEN_REDIRECT_HLIST, tmp_entry_redirected, tmp_hlist_node, node, redirected_inode->i_ino) {
+			if (!strcmp(tmp_entry_redirected->info.target_pathname, info.redirected_pathname)) {
+				is_second_dup_found = true;
+				hash_del_rcu(&tmp_entry_redirected->node);
+				break;
+			}
+		}
+		SUSFS_LOGI("target_pathname: '%s', redirected_pathname: '%s', target_i_ino: '%lu', redirected_i_ino: '%lu', target_s_dev: '%lu', redirected_s_dev: '%lu', uid_scheme: '%d', reversed_lookup_only: %d, spoofed_mnt_id: %d, is successfully added to OPEN_REDIRECT_HLIST\n",
+			new_entry_target->info.target_pathname, new_entry_target->info.redirected_pathname, new_entry_target->target_ino, new_entry_target->redirected_ino, new_entry_target->target_dev, new_entry_target->redirected_dev, new_entry_target->info.uid_scheme, new_entry_target->reversed_lookup_only, new_entry_target->spoofed_mnt_id);
+		SUSFS_LOGI("target_pathname: '%s', redirected_pathname: '%s', target_i_ino: '%lu', redirected_i_ino: '%lu', target_s_dev: '%lu', redirected_s_dev: '%lu', uid_scheme: '%d', reversed_lookup_only: %d, spoofed_mnt_id: %d, is successfully added to OPEN_REDIRECT_HLIST\n",
+			new_entry_redirected->info.target_pathname, new_entry_redirected->info.redirected_pathname, new_entry_redirected->target_ino, new_entry_redirected->redirected_ino, new_entry_redirected->target_dev, new_entry_redirected->redirected_dev, new_entry_redirected->info.uid_scheme, new_entry_redirected->reversed_lookup_only, new_entry_redirected->spoofed_mnt_id);
+		hash_add_rcu(OPEN_REDIRECT_HLIST, &new_entry_target->node, new_entry_target->target_ino);
+		hash_add_rcu(OPEN_REDIRECT_HLIST, &new_entry_redirected->node, new_entry_redirected->target_ino);
+		// we need to mark both target and redirected path inode just for spoofing readlink as well
+		set_bit(AS_FLAGS_OPEN_REDIRECT, &redirected_inode->i_mapping->flags);
+		set_bit(AS_FLAGS_OPEN_REDIRECT, &target_inode->i_mapping->flags);
+		spin_unlock(&susfs_spin_lock_open_redirect);
+		synchronize_rcu();
+		if (is_second_dup_found)
+			kfree(tmp_entry_redirected);
+		kfree(tmp_entry_target);
+		info.err = 0;
+		goto out_path_put_target_path;
+	}
+
 	SUSFS_LOGI("target_pathname: '%s', redirected_pathname: '%s', target_i_ino: '%lu', redirected_i_ino: '%lu', target_s_dev: '%lu', redirected_s_dev: '%lu', uid_scheme: '%d', reversed_lookup_only: %d, spoofed_mnt_id: %d, is successfully added to OPEN_REDIRECT_HLIST\n",
 			new_entry_target->info.target_pathname, new_entry_target->info.redirected_pathname, new_entry_target->target_ino, new_entry_target->redirected_ino, new_entry_target->target_dev, new_entry_target->redirected_dev, new_entry_target->info.uid_scheme, new_entry_target->reversed_lookup_only, new_entry_target->spoofed_mnt_id);
 	SUSFS_LOGI("target_pathname: '%s', redirected_pathname: '%s', target_i_ino: '%lu', redirected_i_ino: '%lu', target_s_dev: '%lu', redirected_s_dev: '%lu', uid_scheme: '%d', reversed_lookup_only: %d, spoofed_mnt_id: %d, is successfully added to OPEN_REDIRECT_HLIST\n",
@@ -870,8 +901,8 @@ out_add_new_entry:
 	set_bit(AS_FLAGS_OPEN_REDIRECT, &redirected_inode->i_mapping->flags);
 	set_bit(AS_FLAGS_OPEN_REDIRECT, &target_inode->i_mapping->flags);
 	spin_unlock(&susfs_spin_lock_open_redirect);
-
 	info.err = 0;
+
 out_path_put_target_path:
 	path_put(&target_path);
 out_path_put_redirected_path:
