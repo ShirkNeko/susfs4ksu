@@ -65,7 +65,6 @@ int add_sus_path(int argc, char *argv[]) {
 
 int add_sus_path_loop(int argc, char *argv[]) {
 	struct st_susfs_sus_path info = {0};
-	char resolved_pathname[PATH_MAX];
 
 	if (argc != 3) {
 		print_help();
@@ -77,12 +76,7 @@ int add_sus_path_loop(int argc, char *argv[]) {
 		return -EINVAL;
 	}
 
-	if (!realpath(argv[2], resolved_pathname)) {
-		log("[-] failed to get realpath from path: %s\n", argv[2]);
-		return errno;
-	}
-
-	strncpy(info.target_pathname, resolved_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+	strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
 	info.err = ERR_CMD_NOT_SUPPORTED;
 	syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_ADD_SUS_PATH_LOOP, &info);
 	PRT_MSG_IF_CMD_NOT_SUPPORTED(info.err, CMD_SUSFS_ADD_SUS_PATH_LOOP);
