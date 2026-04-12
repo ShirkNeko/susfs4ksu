@@ -19,7 +19,16 @@ EOF
 #### Hide some sus paths, effective only for processes that are marked umounted with uid >= 10000 ####
 cat <<EOF >/dev/null
 ## First we need to wait until files are accessible in /sdcard ##
-until [ -d "/sdcard/Android" ]; do sleep 1; done
+until [ -d "/sdcard/Android" ]; do sleep 3; done
+
+## Remove the '..5.u.S' leftover ##
+## THe reason why this sus file is created is because users have grant the MANAGE_EXTERNAL_STORAGE permission for the apps that detecting sus files in /sdcard, or in /sdcard/Android/data where the apps are exploiting the unicode bugs to create files arbitrary.
+## susfs redirects the sus path to a supposed not-existing path named '..5.u.S', and this is the only way to settle the cross check of returned errno from various syscalls, but one disadvantage is that if the path itself can be written/created by the app (MANAGE_EXTERNAL_STORAGE granted), then it is futile to hide it, but at least here we automatically delete them on each boot.
+## The best practise is to revoke MANAGE_EXTERNAL_STORAGE permission for all third party apps.
+
+[ -e "/sdcard/..5.u.S" ] && rm -rf "/sdcard/..5.u.S"
+[ -e "/sdcard/Android/data/..5.u.S" ] && rm -rf "/sdcard/Android/data/..5.u.S"
+[ -e "/sdcard/Android/media/..5.u.S" ] && rm -rf "/sdcard/Android/media/..5.u.S"
 
 ## For paths that are read-only all the time, add them via 'add_sus_path' ##
 ${SUSFS_BIN} add_sus_path /sys/block/loop0

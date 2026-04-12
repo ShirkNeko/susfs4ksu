@@ -52,3 +52,12 @@ susfs_hexpatch_prop_name() {
 	fi
 }
 
+susfs_list_full_file_access_for_third_party_apps(){
+        local TARGET_PERMISSION="android.permission.MANAGE_EXTERNAL_STORAGE"
+        pm list packages -3 | cut -d':' -f2 | while read -r PKGNAME; do
+                if pm dump-package ${PKGNAME} | grep -Eq "${TARGET_PERMISSION}"; then
+                        echo "susfs: package '${PKGNAME}' has '${TARGET_PERMISSION}' permission declared." | tee /dev/kmsg
+                fi
+        done
+}
+
