@@ -319,7 +319,7 @@ index abf3eb8d..555e22ec 100644
  
      if (ksu_cred) {
 diff --git a/kernel/feature/adb_root.c b/kernel/feature/adb_root.c
-index 98990673..d8c1c074 100644
+index c41a9955..0e7819ec 100644
 --- a/kernel/feature/adb_root.c
 +++ b/kernel/feature/adb_root.c
 @@ -9,9 +9,12 @@
@@ -375,7 +375,7 @@ index 98990673..d8c1c074 100644
  {
      static const char kLibAdbRoot[] = "/data/adb/ksu/lib/libadbroot.so";
      struct path path;
-@@ -64,15 +50,16 @@ static long is_libadbroot_ok()
+@@ -65,15 +51,16 @@ static long is_libadbroot_ok()
      return ret;
  }
  
@@ -395,7 +395,7 @@ index 98990673..d8c1c074 100644
      unsigned long *tmp_env_p = NULL, *tmp_env_p2 = NULL;
      size_t env_count = 0, total_size;
      long ret;
-@@ -158,9 +145,9 @@ out_release_env_p:
+@@ -159,9 +146,9 @@ out_release_env_p:
      return ret;
  }
  
@@ -407,7 +407,7 @@ index 98990673..d8c1c074 100644
          return 0;
      }
  
-@@ -168,20 +155,25 @@ static long do_ksu_adb_root_handle_execve(struct pt_regs *regs)
+@@ -169,20 +156,25 @@ static long do_ksu_adb_root_handle_execve(struct pt_regs *regs)
          return 0;
      }
  
