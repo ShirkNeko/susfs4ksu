@@ -37,11 +37,19 @@ ${SUSFS_BIN} add_sus_path /vendor/bin/install-recovery.sh
 ${SUSFS_BIN} add_sus_path /system/bin/install-recovery.sh
 
 ## For paths that are frequently modified, we can add them via 'add_sus_path_loop' ##
+## path in /sdcard ##
 ${SUSFS_BIN} add_sus_path_loop /sdcard/TWRP
 ${SUSFS_BIN} add_sus_path_loop /sdcard/MT2
 ${SUSFS_BIN} add_sus_path_loop /sdcard/AppManager
 ${SUSFS_BIN} add_sus_path_loop /sdcard/Android/data/io.github.muntashirakon.AppManager
 ${SUSFS_BIN} add_sus_path_loop /sdcard/Android/media/io.github.muntashirakon.AppManager
+## Be reminded that without HMA's vold app data enabled, added sus_paths are still vulnerable to zwc exploit, so in this case users also have to add its underlying path as well ##
+${SUSFS_BIN} add_sus_path_loop /data/media/0/TWRP
+${SUSFS_BIN} add_sus_path_loop /data/media/0/MT2
+${SUSFS_BIN} add_sus_path_loop /data/media/0/AppManager
+${SUSFS_BIN} add_sus_path_loop /data/media/0/Android/data/io.github.muntashirakon.AppManager
+${SUSFS_BIN} add_sus_path_loop /data/media/0/Android/media/io.github.muntashirakon.AppManager
+## path not in /sdcard ##
 ${SUSFS_BIN} add_sus_path_loop /data/local/tmp/main.jar
 EOF
 
