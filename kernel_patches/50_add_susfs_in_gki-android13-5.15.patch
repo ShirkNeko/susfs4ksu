@@ -1,6 +1,6 @@
 
 diff --git a/drivers/input/input.c b/drivers/input/input.c
-index 171f71bd4..dc30e843e 100644
+index 171f71bd4..f29bac9dd 100644
 --- a/drivers/input/input.c
 +++ b/drivers/input/input.c
 @@ -375,6 +375,12 @@ static int input_get_disposition(struct input_dev *dev,
@@ -8,7 +8,7 @@ index 171f71bd4..dc30e843e 100644
  }
  
 +#ifdef CONFIG_KSU_SUSFS
-+extern bool ksu_input_hook __read_mostly;
++extern struct static_key_false ksu_input_hook_key_false;
 +extern __attribute__((cold)) int ksu_handle_input_handle_event(
 +			unsigned int *type, unsigned int *code, int *value);
 +#endif
@@ -21,7 +21,7 @@ index 171f71bd4..dc30e843e 100644
  
  	disposition = input_get_disposition(dev, type, code, &value);
 +#ifdef CONFIG_KSU_SUSFS
-+	if (unlikely(ksu_input_hook))
++	if (static_branch_unlikely(&ksu_input_hook_key_false))
 +		ksu_handle_input_handle_event(&type, &code, &value);
 +#endif
 +
@@ -82,7 +82,7 @@ index 4f25015aa..17e9e15af 100644
  		return NULL;
  	return dentry->d_fsdata;
 diff --git a/fs/exec.c b/fs/exec.c
-index b1b9db56a..f977611ff 100644
+index b1b9db56a..67d7a1d3d 100644
 --- a/fs/exec.c
 +++ b/fs/exec.c
 @@ -65,6 +65,9 @@
@@ -95,14 +95,13 @@ index b1b9db56a..f977611ff 100644
  
  #include <linux/uaccess.h>
  #include <asm/mmu_context.h>
-@@ -1891,6 +1894,17 @@ static int bprm_execve(struct linux_binprm *bprm,
+@@ -1891,6 +1894,16 @@ static int bprm_execve(struct linux_binprm *bprm,
  	return retval;
  }
  
 +#ifdef CONFIG_KSU_SUSFS
-+extern bool ksu_execveat_hook __read_mostly;
 +extern bool ksu_su_compat_enabled __read_mostly;
-+extern bool susfs_is_sdcard_android_data_decrypted __read_mostly;
++extern struct static_key_false susfs_set_sdcard_android_data_decrypted_key_false;
 +extern bool __ksu_is_allow_uid_for_current(uid_t uid);
 +extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
 +			void *envp, int *flags);
@@ -113,20 +112,18 @@ index b1b9db56a..f977611ff 100644
  static int do_execveat_common(int fd, struct filename *filename,
  			      struct user_arg_ptr argv,
  			      struct user_arg_ptr envp,
-@@ -1902,6 +1916,20 @@ static int do_execveat_common(int fd, struct filename *filename,
+@@ -1902,6 +1915,18 @@ static int do_execveat_common(int fd, struct filename *filename,
  	if (IS_ERR(filename))
  		return PTR_ERR(filename);
  
 +#ifdef CONFIG_KSU_SUSFS
-+	if (likely(susfs_is_current_proc_umounted()) || !ksu_su_compat_enabled) {
++	if (likely(susfs_is_current_proc_umounted()) || !ksu_su_compat_enabled)
 +		goto orig_flow;
-+	}
 +
-+	if (unlikely(ksu_execveat_hook || !susfs_is_sdcard_android_data_decrypted)) {
++	if (static_branch_unlikely(&susfs_set_sdcard_android_data_decrypted_key_false))
 +		ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
-+	} else if ((__ksu_is_allow_uid_for_current(current_uid().val))) {
++	else
 +		ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);
-+	}
 +
 +orig_flow:
 +#endif
@@ -452,7 +449,7 @@ index ce97b60fe..16440ed57 100644
  	do_delayed_call(&done);
  	return res;
 diff --git a/fs/namespace.c b/fs/namespace.c
-index ff5e6455c..540157606 100644
+index ff5e6455c..81f2300e5 100644
 --- a/fs/namespace.c
 +++ b/fs/namespace.c
 @@ -32,10 +32,24 @@
@@ -468,7 +465,7 @@ index ff5e6455c..540157606 100644
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +extern bool susfs_is_current_ksu_domain(void);
-+extern bool susfs_is_sdcard_android_data_decrypted __read_mostly;
++extern struct static_key_false susfs_set_sdcard_android_data_decrypted_key_false;
 +
 +#define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */
 +
@@ -658,16 +655,18 @@ index ff5e6455c..540157606 100644
  static struct mount *alloc_vfsmnt(const char *name)
  {
  	struct mount *mnt = kmem_cache_zalloc(mnt_cache, GFP_KERNEL);
-@@ -967,7 +1130,19 @@ struct vfsmount *vfs_create_mount(struct fs_context *fc)
+@@ -967,7 +1130,21 @@ struct vfsmount *vfs_create_mount(struct fs_context *fc)
  	if (!fc->root)
  		return ERR_PTR(-EINVAL);
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +	// - We will just stop checking for ksu process if /sdcard/Android is accessible,
 +	//   for the sake of performance
-+	if (!READ_ONCE(susfs_is_sdcard_android_data_decrypted) && susfs_is_current_ksu_domain()) {
-+		mnt = susfs_alloc_non_unshare_ksu_vfsmnt(fc->source ?: "none");
-+		goto bypass_orig_flow;
++	if (static_branch_unlikely(&susfs_set_sdcard_android_data_decrypted_key_false)) {
++		if (susfs_is_current_ksu_domain()) {
++			mnt = susfs_alloc_non_unshare_ksu_vfsmnt(fc->source ?: "none");
++			goto bypass_orig_flow;
++		}
 +	}
 +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 +
@@ -678,7 +677,7 @@ index ff5e6455c..540157606 100644
  	if (!mnt)
  		return ERR_PTR(-ENOMEM);
  
-@@ -1053,8 +1228,45 @@ static struct mount *clone_mnt(struct mount *old, struct dentry *root,
+@@ -1053,8 +1230,42 @@ static struct mount *clone_mnt(struct mount *old, struct dentry *root,
  	struct super_block *sb = old->mnt.mnt_sb;
  	struct mount *mnt;
  	int err;
@@ -687,28 +686,25 @@ index ff5e6455c..540157606 100644
 +
 +	// - We will just stop checking for ksu process if /sdcard/Android is accessible,
 +	//   for the sake of performance
-+	if (READ_ONCE(susfs_is_sdcard_android_data_decrypted)) {
-+		goto skip_checking_for_ksu_proc;
-+	}
-+
-+	// - If /sdcard/Android is still not accessible, we keep checking for mounts
-+	//   mounted by ksu process
-+	if (susfs_is_current_ksu_domain()) {
-+		// - If it is unsharing, we re-use the old->mnt_id assign it for mnt->mnt_id directly
-+		//   without going thru ida, but we need to set a bit VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT
-+		//   on mnt->mnt.mnt_flags below, otherwise we find no other ways to identify if this
-+		//   mnt->mnt_id is assigned without ida when it is being freed in mnt_free_id().
-+		if (flag & CL_COPY_MNT_NS) {
-+			mnt = susfs_alloc_unshare_ksu_vfsmnt(old->mnt_devname, old->mnt_id);
-+			is_mnt_ksu_unshared = true;
++	if (static_branch_unlikely(&susfs_set_sdcard_android_data_decrypted_key_false)) {
++		// - If /sdcard/Android is still not accessible, we keep checking for mounts
++		//   mounted by ksu process
++		if (susfs_is_current_ksu_domain()) {
++			// - If it is unsharing, we re-use the old->mnt_id assign it for mnt->mnt_id directly
++			//   without going thru ida, but we need to set a bit VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT
++			//   on mnt->mnt.mnt_flags below, otherwise we find no other ways to identify if this
++			//   mnt->mnt_id is assigned without ida when it is being freed in mnt_free_id().
++			if (flag & CL_COPY_MNT_NS) {
++				mnt = susfs_alloc_unshare_ksu_vfsmnt(old->mnt_devname, old->mnt_id);
++				is_mnt_ksu_unshared = true;
++				goto bypass_orig_flow;
++			}
++			// else we just go assign fake mnt_id starting with DEFAULT_KSU_MNT_ID
++			mnt = susfs_alloc_non_unshare_ksu_vfsmnt(old->mnt_devname);
 +			goto bypass_orig_flow;
 +		}
-+		// else we just go assign fake mnt_id starting with DEFAULT_KSU_MNT_ID
-+		mnt = susfs_alloc_non_unshare_ksu_vfsmnt(old->mnt_devname);
-+		goto bypass_orig_flow;
 +	}
 +
-+skip_checking_for_ksu_proc:
 +	// - We keep checking all processes and if old->mnt_id >= DEFAULT_KSU_MNT_ID,
 +	//   go assign fake mnt_id starting with DEFAULT_KSU_MNT_ID
 +	if (old->mnt_id >= DEFAULT_KSU_MNT_ID) {
@@ -724,7 +720,7 @@ index ff5e6455c..540157606 100644
  	if (!mnt)
  		return ERR_PTR(-ENOMEM);
  
-@@ -1072,6 +1284,12 @@ static struct mount *clone_mnt(struct mount *old, struct dentry *root,
+@@ -1072,6 +1283,12 @@ static struct mount *clone_mnt(struct mount *old, struct dentry *root,
  	mnt->mnt.mnt_flags = old->mnt.mnt_flags;
  	mnt->mnt.mnt_flags &= ~(MNT_WRITE_HOLD|MNT_MARKED|MNT_INTERNAL);
  
@@ -737,7 +733,7 @@ index ff5e6455c..540157606 100644
  	atomic_inc(&sb->s_active);
  	mnt->mnt.mnt_userns = mnt_user_ns(&old->mnt);
  	if (!initial_idmapping(mnt->mnt.mnt_userns))
-@@ -3462,6 +3680,9 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
+@@ -3462,6 +3679,9 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
  	copy_flags = CL_COPY_UNBINDABLE | CL_EXPIRE;
  	if (user_ns != ns->user_ns)
  		copy_flags |= CL_SHARED_TO_SLAVE;
@@ -747,7 +743,7 @@ index ff5e6455c..540157606 100644
  	new = copy_tree(old, old->mnt.mnt_root, copy_flags);
  	if (IS_ERR(new)) {
  		namespace_unlock();
-@@ -4669,3 +4890,34 @@ const struct proc_ns_operations mntns_operations = {
+@@ -4669,3 +4889,34 @@ const struct proc_ns_operations mntns_operations = {
  	.install	= mntns_install,
  	.owner		= mntns_owner,
  };
@@ -1085,22 +1081,24 @@ index 7624ae2c1..0ec33b7af 100644
  			continue;
  
 diff --git a/fs/proc/bootconfig.c b/fs/proc/bootconfig.c
-index 2e244ada1..792e1cb04 100644
+index 2e244ada1..298a48dbf 100644
 --- a/fs/proc/bootconfig.c
 +++ b/fs/proc/bootconfig.c
-@@ -12,8 +12,19 @@
+@@ -12,8 +12,21 @@
  
  static char *saved_boot_config;
  
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-+extern int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
++extern struct static_key_true susfs_set_fake_cmdline_or_bootconfig_key_true;
++extern void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
 +#endif
 +
  static int boot_config_proc_show(struct seq_file *m, void *v)
  {
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-+	if (saved_boot_config) {
-+		if (!susfs_spoof_cmdline_or_bootconfig(m)) {
++	if (static_branch_likely(&susfs_set_fake_cmdline_or_bootconfig_key_true)) {
++		if (saved_boot_config) {
++			susfs_spoof_cmdline_or_bootconfig(m);
 +			return 0;
 +		}
 +	}
@@ -1463,7 +1461,7 @@ index 49650e54d..403d9353c 100644
  	if (sb->s_op->show_devname) {
  		seq_puts(m, "device ");
 diff --git a/fs/read_write.c b/fs/read_write.c
-index 3f6818620..97bdb2269 100644
+index 3f6818620..3d7cd3bc1 100644
 --- a/fs/read_write.c
 +++ b/fs/read_write.c
 @@ -628,8 +628,18 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
@@ -1471,14 +1469,14 @@ index 3f6818620..97bdb2269 100644
  }
  
 +#ifdef CONFIG_KSU_SUSFS
-+extern bool ksu_init_rc_hook __read_mostly;
++extern struct static_key_false ksu_init_rc_hook_key_false;
 +extern __attribute__((cold)) void ksu_handle_sys_read(unsigned int fd);
 +#endif
 +
  SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
  {
 +#ifdef CONFIG_KSU_SUSFS
-+	if (unlikely(ksu_init_rc_hook))
++	if (static_branch_unlikely(&ksu_init_rc_hook_key_false))
 +		ksu_handle_sys_read(fd);
 +#endif
 +
@@ -1746,7 +1744,7 @@ index 09e8ed7d4..419947280 100644
  	if (error >= 0)
  		error = buf.error;
 diff --git a/fs/stat.c b/fs/stat.c
-index 357a1db41..e962cf1a8 100644
+index 357a1db41..78dad7f8a 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
 @@ -18,12 +18,23 @@
@@ -1809,21 +1807,20 @@ index 357a1db41..e962cf1a8 100644
 +
 +
 +#ifdef CONFIG_KSU_SUSFS
-+extern bool ksu_init_rc_hook __read_mostly;
++extern struct static_key_false ksu_init_rc_hook_key_false;
 +extern void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr);
 +#endif // #ifdef CONFIG_KSU_SUSFS
 +
  int vfs_fstat(int fd, struct kstat *stat)
  {
  	struct fd f;
-@@ -180,10 +211,25 @@ int vfs_fstat(int fd, struct kstat *stat)
+@@ -180,10 +211,24 @@ int vfs_fstat(int fd, struct kstat *stat)
  	if (!f.file)
  		return -EBADF;
  	error = vfs_getattr(&f.file->f_path, stat, STATX_BASIC_STATS, 0);
 +#ifdef CONFIG_KSU_SUSFS
-+	if (unlikely(ksu_init_rc_hook)) {
++	if (static_branch_unlikely(&ksu_init_rc_hook_key_false))
 +		ksu_handle_vfs_fstat(fd, &stat->size);
-+	}
 +#endif // #ifdef CONFIG_KSU_SUSFS
  	fdput(f);
  	return error;
@@ -1842,7 +1839,7 @@ index 357a1db41..e962cf1a8 100644
  /**
   * vfs_statx - Get basic and extra attributes by filename
   * @dfd: A file descriptor representing the base dir for a relative filename
-@@ -206,6 +252,18 @@ static int vfs_statx(int dfd, const char __user *filename, int flags,
+@@ -206,6 +251,18 @@ static int vfs_statx(int dfd, const char __user *filename, int flags,
  	unsigned lookup_flags = 0;
  	int error;
  
@@ -1861,7 +1858,7 @@ index 357a1db41..e962cf1a8 100644
  	if (flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT | AT_EMPTY_PATH |
  		      AT_STATX_SYNC_TYPE))
  		return -EINVAL;
-@@ -223,7 +281,17 @@ static int vfs_statx(int dfd, const char __user *filename, int flags,
+@@ -223,7 +280,17 @@ static int vfs_statx(int dfd, const char __user *filename, int flags,
  		goto out;
  
  	error = vfs_getattr(&path, stat, request_mask, flags);
@@ -2027,7 +2024,7 @@ index 5105f2a46..760a21c6e 100644
  	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
  		return -EPERM;
 diff --git a/kernel/sys.c b/kernel/sys.c
-index 0e7609307..463728f51 100644
+index 0e7609307..b3eb6fce7 100644
 --- a/kernel/sys.c
 +++ b/kernel/sys.c
 @@ -647,6 +647,9 @@ SYSCALL_DEFINE1(setuid, uid_t, uid)
@@ -2051,11 +2048,12 @@ index 0e7609307..463728f51 100644
  	kruid = make_kuid(ns, ruid);
  	keuid = make_kuid(ns, euid);
  	ksuid = make_kuid(ns, suid);
-@@ -1291,12 +1298,18 @@ static int override_release(char __user *release, size_t len)
+@@ -1291,12 +1298,20 @@ static int override_release(char __user *release, size_t len)
  	return ret;
  }
  
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
++extern struct static_key_true susfs_set_uname_key_true;
 +extern void susfs_spoof_uname(struct new_utsname* tmp);
 +#endif
  SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
@@ -2065,13 +2063,14 @@ index 0e7609307..463728f51 100644
  	down_read(&uts_sem);
  	memcpy(&tmp, utsname(), sizeof(tmp));
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-+	susfs_spoof_uname(&tmp);
++	if (static_branch_likely(&susfs_set_uname_key_true))
++		susfs_spoof_uname(&tmp);
 +#endif
  	up_read(&uts_sem);
  	if (copy_to_user(name, &tmp, sizeof(tmp)))
  		return -EFAULT;
 diff --git a/security/selinux/avc.c b/security/selinux/avc.c
-index 2ee2c8a31..273c82ec7 100644
+index 2ee2c8a31..66eb3cdb6 100644
 --- a/security/selinux/avc.c
 +++ b/security/selinux/avc.c
 @@ -47,6 +47,12 @@
@@ -2081,23 +2080,25 @@ index 2ee2c8a31..273c82ec7 100644
 +#ifdef CONFIG_KSU_SUSFS
 +extern u32 susfs_ksu_sid;
 +extern u32 susfs_priv_app_sid;
-+bool susfs_is_avc_log_spoofing_enabled = false;
++extern struct static_key_true susfs_avc_log_spoofing_key_true;
 +#endif
 +
  struct avc_entry {
  	u32			ssid;
  	u32			tsid;
-@@ -730,11 +736,22 @@ static void avc_audit_post_callback(struct audit_buffer *ab, void *a)
+@@ -730,11 +736,24 @@ static void avc_audit_post_callback(struct audit_buffer *ab, void *a)
  
  	rc = security_sid_to_context(sad->state, sad->tsid, &tcontext,
  				     &tcontext_len);
 +#ifdef CONFIG_KSU_SUSFS
-+	if (unlikely(sad->tsid == susfs_ksu_sid && READ_ONCE(susfs_is_avc_log_spoofing_enabled))) {
-+		if (rc)
-+			audit_log_format(ab, " tsid=%d", susfs_priv_app_sid);
-+		else
-+			audit_log_format(ab, " tcontext=%s", "u:r:priv_app:s0:c512,c768");
-+		goto bypass_orig_flow;
++	if (static_branch_likely(&susfs_avc_log_spoofing_key_true)) {
++		if (unlikely(sad->tsid == susfs_ksu_sid)) {
++			if (rc)
++				audit_log_format(ab, " tsid=%d", susfs_priv_app_sid);
++			else
++				audit_log_format(ab, " tcontext=%s", "u:r:priv_app:s0:c512,c768");
++			goto bypass_orig_flow;
++		}
 +	}
 +#endif
  	if (rc)
