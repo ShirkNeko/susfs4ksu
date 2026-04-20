@@ -28,6 +28,7 @@ DEFINE_STATIC_KEY_FALSE(ksu_init_rc_hook_key_false);
 DEFINE_STATIC_KEY_FALSE(ksu_input_hook_key_false);
 
 extern bool susfs_is_current_ksu_domain(void);
+extern void setup_selinux(const char *domain, struct cred *cred);
 
 #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
 DEFINE_STATIC_KEY_TRUE(susfs_log_key);
@@ -36,10 +37,6 @@ DEFINE_STATIC_KEY_TRUE(susfs_log_key);
 #else
 #define SUSFS_LOGI(fmt, ...) 
 #define SUSFS_LOGE(fmt, ...) 
-#endif
-
-#ifndef FUSE_SUPER_MAGIC
-#define FUSE_SUPER_MAGIC 0x65735546
 #endif
 
 /* sus_path */
@@ -82,6 +79,7 @@ void susfs_add_sus_path(void __user **user_info) {
 			goto out_path_put_path;
 		}
 		set_bit(AS_FLAGS_SUS_PATH, &fi->inode.i_mapping->flags);
+		set_bit(AS_FLAGS_SUS_PATH, &inode->i_mapping->flags);
 		SUSFS_LOGI("flagged AS_FLAGS_SUS_PATH on pathname: '%s', fi->nodeid: %llu, fi->inode.i_ino: %lu, fi->inode.i_mapping->flags: 0x%lx\n", 
 					info.target_pathname, fi->nodeid, fi->inode.i_ino, fi->inode.i_mapping->flags);
 		info.err = 0;
@@ -160,6 +158,7 @@ void susfs_run_sus_path_loop(void) {
 					continue;
 				}
 				set_bit(AS_FLAGS_SUS_PATH, &fi->inode.i_mapping->flags);
+				set_bit(AS_FLAGS_SUS_PATH, &inode->i_mapping->flags);
 				SUSFS_LOGI("re-flag AS_FLAGS_SUS_PATH on path '%s', fi->inode.i_ino: '%lu', fi->inode.i_mapping->flags: 0x%lx\n",
 						cursor->target_pathname, fi->inode.i_ino, fi->inode.i_mapping->flags);
 			} else {
@@ -177,6 +176,9 @@ static inline bool is_i_uid_not_allowed(uid_t i_uid) {
 	return likely(current_uid().val != i_uid);
 }
 
+/* - Please note that path inside /sdcard will be still visible to MediaProvider module,
+ *   since the uid of path like /sdcard/TWRP will be the uid of your MediaProvider module.
+ */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
 bool susfs_is_inode_sus_path(struct mnt_idmap* idmap, struct inode *inode)
 #else
@@ -228,6 +230,10 @@ bool susfs_is_inode_sus_path(struct inode *inode)
 		return true;
 	}
 	return false;
+}
+
+int susfs_get_data_path(struct path *path) {
+	return kern_path("/data", LOOKUP_FOLLOW, path);
 }
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
@@ -1277,7 +1283,6 @@ out_copy_to_user:
 /* kthread for checking if /sdcard/Android is accessible via fsnoitfy */
 /* code is straightly borrowed from KernelSU's pkg_observer.c */
 #define SDCARD_ANDROID_PATH "/data/media/0/Android"
-extern void setup_selinux(const char *domain, struct cred *cred);
 DEFINE_STATIC_KEY_FALSE(susfs_set_sdcard_android_data_decrypted_key_false);
 
 struct watch_dir {
@@ -1411,7 +1416,7 @@ static int susfs_sdcard_monitor_fn(void *data)
 	commit_creds(cred);
 
 	if (!susfs_is_current_ksu_domain()) {
-		SUSFS_LOGE("domain is not su, exiting the thread\n");
+		SUSFS_LOGE("domain is not ksu, exiting the thread\n");
 		return -EINVAL;
 	}
 
