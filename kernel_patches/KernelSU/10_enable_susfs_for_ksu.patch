@@ -1060,14 +1060,14 @@ index 80e3a9d5..7607146c 100644
  typedef int (*ksu_feature_get_t)(u64 *value);
  typedef int (*ksu_feature_set_t)(u64 value);
 diff --git a/kernel/runtime/boot_event.c b/kernel/runtime/boot_event.c
-index b0fd8b3c..58721dd3 100644
+index b0fd8b3c..1fb18db0 100644
 --- a/kernel/runtime/boot_event.c
 +++ b/kernel/runtime/boot_event.c
 @@ -12,6 +12,7 @@
  
  bool ksu_module_mounted __read_mostly = false;
  bool ksu_boot_completed __read_mostly = false;
-+extern struct static_key_false ksu_input_hook_key_false;
++extern struct static_key_true ksu_is_input_hook_enabled;
  
  void on_post_fs_data(void)
  {
@@ -1076,9 +1076,9 @@ index b0fd8b3c..58721dd3 100644
      ksu_observer_init();
      // Sanity check for safe mode only needs early-boot input samples.
 -    ksu_stop_input_hook_runtime();
-+    if (static_key_enabled(&ksu_input_hook_key_false)) {
-+        static_branch_disable(&ksu_input_hook_key_false);
-+        pr_info("disabling ksu_input_hook_key_false\n");
++    if (static_key_enabled(&ksu_is_input_hook_enabled)) {
++        static_branch_disable(&ksu_is_input_hook_enabled);
++        pr_info("ksu_input_hook is disabled\n");
 +    }
  }
  
@@ -1111,7 +1111,7 @@ index 62cfaabf..ba238519 100644
 +                             struct user_arg_ptr *envp, int *flags);
  #endif
 diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
-index 25933bb6..6eae1b5f 100644
+index 25933bb6..01eb5fbc 100644
 --- a/kernel/runtime/ksud_integration.c
 +++ b/kernel/runtime/ksud_integration.c
 @@ -9,7 +9,6 @@
@@ -1129,8 +1129,8 @@ index 25933bb6..6eae1b5f 100644
 -#include "hook/syscall_hook.h"
 -#include "hook/syscall_event_bridge.h"
 +
-+extern struct static_key_false ksu_init_rc_hook_key_false;
-+extern struct static_key_false ksu_input_hook_key_false;
++DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);
++DEFINE_STATIC_KEY_TRUE(ksu_is_input_hook_enabled);
  
  // clang-format off
  static const char KERNEL_SU_RC[] =
@@ -1260,19 +1260,20 @@ index 25933bb6..6eae1b5f 100644
  }
  
  static ssize_t (*orig_read)(struct file *, char __user *, size_t, loff_t *);
-@@ -293,7 +297,10 @@ static void ksu_install_rc_hook(struct file *file)
+@@ -293,7 +297,11 @@ static void ksu_install_rc_hook(struct file *file)
          return;
      }
      rc_hooked = true;
 -    stop_init_rc_hook();
 +
-+    if (static_key_enabled(&ksu_init_rc_hook_key_false))
-+        static_branch_disable(&ksu_init_rc_hook_key_false);
-+    pr_info("disabling ksu_init_rc_hook_key_false\n");
++    if (static_key_enabled(&ksu_is_init_rc_hook_enabled)) {
++        static_branch_disable(&ksu_is_init_rc_hook_enabled);
++        pr_info("ksu_init_rc_hook is disabled\n");
++    }
  
      // now we can sure that the init process is reading
      // `/system/etc/init/init.rc`
-@@ -316,7 +323,7 @@ static void ksu_install_rc_hook(struct file *file)
+@@ -316,7 +324,7 @@ static void ksu_install_rc_hook(struct file *file)
      file->f_op = &fops_proxy;
  }
  
@@ -1281,19 +1282,19 @@ index 25933bb6..6eae1b5f 100644
  {
      struct file *file = fget(fd);
      if (!file) {
-@@ -342,7 +349,10 @@ int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *v
+@@ -342,7 +350,10 @@ int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *v
              // key pressed, count it
              volumedown_pressed_count += 1;
              if (is_volumedown_enough(volumedown_pressed_count)) {
 -                ksu_stop_input_hook_runtime();
-+                if (static_key_enabled(&ksu_input_hook_key_false)) {
-+                    static_branch_disable(&ksu_input_hook_key_false);
-+                    pr_info("disabling ksu_input_hook_key_false\n");
++                if (static_key_enabled(&ksu_is_input_hook_enabled)) {
++                    static_branch_disable(&ksu_is_input_hook_enabled);
++                    pr_info("ksu_input_hook is disabled\n");
 +                }
              }
          }
      }
-@@ -358,12 +368,11 @@ bool ksu_is_safe_mode()
+@@ -358,12 +369,11 @@ bool ksu_is_safe_mode()
          return true;
      }
  
@@ -1303,14 +1304,14 @@ index 25933bb6..6eae1b5f 100644
 -
      // stop hook first!
 -    ksu_stop_input_hook_runtime();
-+    if (static_key_enabled(&ksu_input_hook_key_false)) {
-+        static_branch_disable(&ksu_input_hook_key_false);
-+        pr_info("disabling ksu_input_hook_key_false\n");
++    if (static_key_enabled(&ksu_is_input_hook_enabled)) {
++        static_branch_disable(&ksu_is_input_hook_enabled);
++        pr_info("ksu_input_hook is disabled\n");
 +    }
  
      pr_info("volumedown_pressed_count: %d\n", volumedown_pressed_count);
      if (is_volumedown_enough(volumedown_pressed_count)) {
-@@ -376,135 +385,27 @@ bool ksu_is_safe_mode()
+@@ -376,135 +386,27 @@ bool ksu_is_safe_mode()
      return false;
  }
  
