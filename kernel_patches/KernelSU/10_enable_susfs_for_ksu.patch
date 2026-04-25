@@ -827,7 +827,7 @@ index 1afba60f..ebee691b 100644
  #endif
 \ No newline at end of file
 diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
-index d3f3ac49..4cc158f0 100644
+index d3f3ac49..d9f74c7e 100644
 --- a/kernel/hook/setuid_hook.c
 +++ b/kernel/hook/setuid_hook.c
 @@ -11,6 +11,8 @@
@@ -839,7 +839,7 @@ index d3f3ac49..4cc158f0 100644
  
  #include "policy/allowlist.h"
  #include "hook/setuid_hook.h"
-@@ -18,19 +20,46 @@
+@@ -18,40 +20,75 @@
  #include "manager/manager_identity.h"
  #include "infra/seccomp_cache.h"
  #include "supercall/supercall.h"
@@ -849,6 +849,7 @@ index d3f3ac49..4cc158f0 100644
 -int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
 +extern u32 susfs_zygote_sid;
 +extern struct cred *ksu_cred;
++extern void disable_seccomp(void);
 +
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +extern void susfs_run_sus_path_loop(void);
@@ -870,51 +871,52 @@ index d3f3ac49..4cc158f0 100644
      // we rely on the fact that zygote always call setresuid(3) with same uids
 +    uid_t new_uid = ruid;
 +    uid_t old_uid = current_uid().val;
-+
+ 
+-    pr_info("handle_setresuid from %d to %d\n", old_uid, new_uid);
 +    // We only interest in process spwaned by zygote
 +    if (!susfs_is_sid_equal(current_cred(), susfs_zygote_sid))
 +        return 0;
  
--    pr_info("handle_setresuid from %d to %d\n", old_uid, new_uid);
+-    if (unlikely(is_uid_manager(new_uid))) {
+-        spin_lock_irq(&current->sighand->siglock);
+-        ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
+-        ksu_set_task_tracepoint_flag(current);
+-        spin_unlock_irq(&current->sighand->siglock);
 +    // Check if spawned process is isolated service first, and force to do umount if so
 +    if (is_isolated_process(new_uid))
 +        goto do_umount;
  
--    if (unlikely(is_uid_manager(new_uid))) {
 +    // - Since ksu maanger app uid is excluded in allow_list_arr, so ksu_uid_should_umount(manager_uid)
 +    //   will always return true, that's why we need to explicitly check if new_uid belongs to
 +    //   ksu manager
 +    if (likely(ksu_is_manager_appid_valid()) && unlikely(is_uid_manager(new_uid))) {
-         spin_lock_irq(&current->sighand->siglock);
-         ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
--        ksu_set_task_tracepoint_flag(current);
-         spin_unlock_irq(&current->sighand->siglock);
- 
++        disable_seccomp();
          pr_info("install fd for manager: %d\n", new_uid);
-@@ -38,20 +67,35 @@ int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
+         ksu_install_fd();
          return 0;
      }
  
+-    if (ksu_is_allow_uid_for_current(new_uid)) {
+-        if (current->seccomp.mode == SECCOMP_MODE_FILTER && current->seccomp.filter) {
+-            spin_lock_irq(&current->sighand->siglock);
+-            ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
+-            spin_unlock_irq(&current->sighand->siglock);
+-        }
+-        ksu_set_task_tracepoint_flag(current);
+-    } else {
+-        ksu_clear_task_tracepoint_flag_if_needed(current);
 +    if (unlikely(new_uid == WEBVIEW_ZYGOTE_UID)) {
 +        // we should not umount for webview zygote
 +        return 0;
-+    }
-+
+     }
+ 
 +    // Check if spawned process is normal user app and needs to be umounted
 +    if (likely(is_appuid(new_uid) && ksu_uid_should_umount(new_uid)))
 +        goto do_umount;
 +
-     if (ksu_is_allow_uid_for_current(new_uid)) {
-         if (current->seccomp.mode == SECCOMP_MODE_FILTER && current->seccomp.filter) {
-             spin_lock_irq(&current->sighand->siglock);
-             ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
-             spin_unlock_irq(&current->sighand->siglock);
-         }
--        ksu_set_task_tracepoint_flag(current);
--    } else {
--        ksu_clear_task_tracepoint_flag_if_needed(current);
-     }
- 
++    if (ksu_is_allow_uid_for_current(new_uid))
++        disable_seccomp();
++
 +    return 0;
 +
 +do_umount:
@@ -975,7 +977,7 @@ index d5eac53f..c1f27f06 100644
      return !__ksu_is_allow_uid(uid);
  #else
 diff --git a/kernel/policy/app_profile.c b/kernel/policy/app_profile.c
-index 1b9f506a..4036dff7 100644
+index 1b9f506a..a1f6f5fe 100644
 --- a/kernel/policy/app_profile.c
 +++ b/kernel/policy/app_profile.c
 @@ -14,7 +14,6 @@
@@ -986,6 +988,15 @@ index 1b9f506a..4036dff7 100644
  
  #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0)
  static struct group_info root_groups = { .usage = REFCOUNT_INIT(2) };
+@@ -63,7 +62,7 @@ void setup_groups(struct root_profile *profile, struct cred *cred)
+ 
+ void seccomp_filter_release(struct task_struct *tsk);
+ 
+-static void disable_seccomp(void)
++void disable_seccomp(void)
+ {
+     struct task_struct *fake;
+ 
 @@ -106,8 +105,6 @@ int escape_with_root_profile(void)
  {
      int ret = 0;
@@ -1004,18 +1015,21 @@ index 1b9f506a..4036dff7 100644
          pr_warn("Already root, don't escape!\n");
          goto out_abort_creds;
      }
-@@ -181,10 +178,6 @@ int escape_with_root_profile(void)
+@@ -179,11 +176,8 @@ int escape_with_root_profile(void)
  
-     disable_seccomp();
+     commit_creds(cred);
  
+-    disable_seccomp();
+-
 -    for_each_thread (p, t) {
 -        ksu_set_task_tracepoint_flag(t);
 -    }
--
++    if (current->seccomp.mode)
++        disable_seccomp();
+ 
      setup_mount_ns(profile->namespaces);
      ksu_put_root_profile(profile);
-     return 0;
-@@ -196,14 +189,16 @@ out_abort_creds:
+@@ -196,14 +190,16 @@ out_abort_creds:
      return ret;
  }
  
