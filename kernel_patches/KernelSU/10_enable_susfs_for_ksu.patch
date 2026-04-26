@@ -500,7 +500,7 @@ index 9caaf9b5..4da2ea9c 100644
      pr_info("handle umount for uid: %d, pid: %d\n", new_uid, current->pid);
  
 diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
-index ca4bb84e..eb550efe 100644
+index ca4bb84e..cfff86fa 100644
 --- a/kernel/feature/sucompat.c
 +++ b/kernel/feature/sucompat.c
 @@ -11,6 +11,11 @@
@@ -515,7 +515,7 @@ index ca4bb84e..eb550efe 100644
  
  #include "arch.h"
  #include "policy/allowlist.h"
-@@ -18,13 +23,19 @@
+@@ -18,25 +23,37 @@
  #include "klog.h" // IWYU pragma: keep
  #include "runtime/ksud.h"
  #include "feature/sucompat.h"
@@ -528,14 +528,35 @@ index ca4bb84e..eb550efe 100644
  #define SU_PATH "/system/bin/su"
  #define SH_PATH "/system/bin/sh"
  
+-bool ksu_su_compat_enabled __read_mostly = true;
 +static const char sh_path[] = SH_PATH;
 +static const char su_path[] = SU_PATH;
 +static const char ksud_path[] = KSUD_PATH;
 +
- bool ksu_su_compat_enabled __read_mostly = true;
++DEFINE_STATIC_KEY_TRUE(ksu_su_compat_enabled);
  
  static int su_compat_feature_get(u64 *value)
-@@ -71,112 +82,207 @@ static char __user *ksud_user_path(void)
+ {
+-    *value = ksu_su_compat_enabled ? 1 : 0;
++    if (static_key_enabled(&ksu_su_compat_enabled))
++        *value = 1;
++    else
++        *value = 0;
+     return 0;
+ }
+ 
+ static int su_compat_feature_set(u64 value)
+ {
+     bool enable = value != 0;
+-    ksu_su_compat_enabled = enable;
++    if (enable)
++        static_branch_enable(&ksu_su_compat_enabled);
++    else
++        static_branch_disable(&ksu_su_compat_enabled);
+     pr_info("su_compat: set to %d\n", enable);
+     return 0;
+ }
+@@ -71,112 +88,207 @@ static char __user *ksud_user_path(void)
      return userspace_stack_buffer(ksud_path, sizeof(ksud_path));
  }
  
@@ -810,10 +831,18 @@ index ca4bb84e..eb550efe 100644
  
  void __exit ksu_sucompat_exit()
 diff --git a/kernel/feature/sucompat.h b/kernel/feature/sucompat.h
-index 1afba60f..ebee691b 100644
+index 1afba60f..1d8da95a 100644
 --- a/kernel/feature/sucompat.h
 +++ b/kernel/feature/sucompat.h
-@@ -10,7 +10,11 @@ void ksu_sucompat_exit(void);
+@@ -3,14 +3,18 @@
+ #include <asm/ptrace.h>
+ #include <linux/types.h>
+ 
+-extern bool ksu_su_compat_enabled;
++extern struct static_key_true ksu_su_compat_enabled;
+ 
+ void ksu_sucompat_init(void);
+ void ksu_sucompat_exit(void);
  
  // Handler functions exported for hook_manager
  int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *__unused_flags);
