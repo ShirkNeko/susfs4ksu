@@ -94,15 +94,15 @@ static inline bool susfs_ends_with(const char *str, const char *suffix) {
 }
 
 static inline bool susfs_is_current_proc_umounted(void) {
-	return test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
+	return (likely(test_thread_flag(TIF_PROC_UMOUNTED)));
 }
 
 static inline void susfs_set_current_proc_umounted(void) {
-	set_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
+	set_thread_flag(TIF_PROC_UMOUNTED);
 }
 
 static inline bool susfs_is_current_proc_umounted_app(void) {
-	return (test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED) &&
+	return (likely(test_thread_flag(TIF_PROC_UMOUNTED)) &&
 			current_uid().val >= 10000);
 }
 
