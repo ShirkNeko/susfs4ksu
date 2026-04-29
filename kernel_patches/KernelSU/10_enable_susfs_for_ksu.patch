@@ -870,7 +870,7 @@ index 1afba60f..1d8da95a 100644
  #endif
 \ No newline at end of file
 diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
-index d3f3ac49..8b99e75e 100644
+index d3f3ac49..dcce5885 100644
 --- a/kernel/hook/setuid_hook.c
 +++ b/kernel/hook/setuid_hook.c
 @@ -11,6 +11,8 @@
@@ -882,7 +882,7 @@ index d3f3ac49..8b99e75e 100644
  
  #include "policy/allowlist.h"
  #include "hook/setuid_hook.h"
-@@ -18,39 +20,71 @@
+@@ -18,39 +20,73 @@
  #include "manager/manager_identity.h"
  #include "infra/seccomp_cache.h"
  #include "supercall/supercall.h"
@@ -943,7 +943,6 @@ index d3f3ac49..8b99e75e 100644
 -        ksu_set_task_tracepoint_flag(current);
 -    } else {
 -        ksu_clear_task_tracepoint_flag_if_needed(current);
--    }
 +    // we should not umount for webview zygote
 +    if (unlikely(ruid == WEBVIEW_ZYGOTE_UID))
 +        return 0;
@@ -959,17 +958,20 @@ index d3f3ac49..8b99e75e 100644
 +    return 0;
 +
 +do_umount:
-+    const struct cred *saved = override_creds(ksu_cred);
++    {
++        const struct cred *saved = override_creds(ksu_cred);
++
++        // Handle kernel umount
++        ksu_handle_umount(current_uid().val, ruid);
++
++        // Handle extra susfs work
++        ksu_handle_extra_susfs_work();
++
++        revert_creds(saved);
+     }
  
-     // Handle kernel umount
+-    // Handle kernel umount
 -    ksu_handle_umount(old_uid, new_uid);
-+    ksu_handle_umount(current_uid().val, ruid);
-+
-+    // Handle extra susfs work
-+    ksu_handle_extra_susfs_work();
-+
-+    revert_creds(saved);
-+
 +    // Mark current proc as umounted
 +    susfs_set_current_proc_umounted();
  
