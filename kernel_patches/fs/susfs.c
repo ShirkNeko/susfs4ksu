@@ -26,6 +26,7 @@
 
 extern bool susfs_is_current_ksu_domain(void);
 extern void setup_selinux(const char *domain, struct cred *cred);
+extern struct cred *ksu_cred;
 
 #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
 DEFINE_STATIC_KEY_TRUE(susfs_is_log_enabled);
@@ -41,7 +42,6 @@ DEFINE_STATIC_KEY_TRUE(susfs_is_log_enabled);
 DEFINE_STATIC_SRCU(susfs_srcu_sus_path_loop);
 static DEFINE_MUTEX(susfs_mutex_lock_sus_path);
 static LIST_HEAD(LH_SUS_PATH_LOOP);
-
 const struct qstr susfs_fake_qstr_name = QSTR_INIT("..5.u.S", 7); // used to re-test the dcache lookup, make sure you don't have file named like this!!
 
 void susfs_add_sus_path(void __user **user_info) {
@@ -131,11 +131,12 @@ out_copy_to_user:
 	SUSFS_LOGI("CMD_SUSFS_ADD_SUS_PATH_LOOP -> ret: %d\n", info.err);
 }
 
-void susfs_run_sus_path_loop(void) {
+static void susfs_run_sus_path_loop(void) {
 	struct st_susfs_sus_path_list *cursor = NULL;
 	struct path path;
 	struct inode *inode;
 	struct fuse_inode *fi = NULL;
+	const struct cred *saved = override_creds(ksu_cred);
 	int srcu_idx = srcu_read_lock(&susfs_srcu_sus_path_loop);
 
 	list_for_each_entry_rcu(cursor, &LH_SUS_PATH_LOOP, list) {
@@ -167,6 +168,7 @@ void susfs_run_sus_path_loop(void) {
 		}
 	}
 	srcu_read_unlock(&susfs_srcu_sus_path_loop, srcu_idx);
+	revert_creds(saved);
 }
 
 static inline bool is_i_uid_not_allowed(uid_t i_uid) {
@@ -1446,8 +1448,21 @@ void susfs_start_sdcard_monitor_fn(void) {
 	}
 }
 
+// - defer extra susfs works to workqueue after do_umount in ksu_handle_setresuid()
+//   so that we do not block there and reduce the risk of time side channel as much as possible.
+struct work_struct susfs_extra_works;
+static void susfs_run_extra_works(struct work_struct *work) {
+	if (!ksu_cred)
+		return;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	susfs_run_sus_path_loop();
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
+}
+
 /* susfs_init */
-void susfs_init(void) {
+void susfs_init(void) {\
+	SUSFS_LOGI("Initializing susfs_extra_works\n");
+	INIT_WORK(&susfs_extra_works, susfs_run_extra_works);
 	SUSFS_LOGI("susfs is initialized! version: " SUSFS_VERSION " \n");
 }
 

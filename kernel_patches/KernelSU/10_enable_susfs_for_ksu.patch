@@ -149,7 +149,7 @@ index 068476e0..8590d1ec 100644
 +
  # Keep a new line here!! Because someone may append config
 diff --git a/kernel/core/init.c b/kernel/core/init.c
-index abf3eb8d..a53e4139 100644
+index abf3eb8d..1aa676e2 100644
 --- a/kernel/core/init.c
 +++ b/kernel/core/init.c
 @@ -6,6 +6,7 @@
@@ -224,24 +224,23 @@ index abf3eb8d..a53e4139 100644
  #ifdef CONFIG_KSU_DEBUG
      pr_alert("*************************************************************");
      pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
-@@ -110,6 +80,11 @@ int __init kernelsu_init(void)
+@@ -110,6 +80,7 @@ int __init kernelsu_init(void)
      pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
      pr_alert("*************************************************************");
  #endif
 +
-+#ifdef CONFIG_KSU_SUSFS
-+    susfs_init();
-+#endif // #ifdef KSU_SUSFS
-+
      if (allow_shell) {
          pr_alert("shell is allowed at init!");
      }
-@@ -119,77 +94,37 @@ int __init kernelsu_init(void)
+@@ -119,77 +90,41 @@ int __init kernelsu_init(void)
          pr_err("prepare cred failed!\n");
      }
  
 -    ksu_syscall_hook_init();
--
++#ifdef CONFIG_KSU_SUSFS
++    susfs_init();
++#endif // #ifdef KSU_SUSFS
+ 
      ksu_feature_init();
 -    ksu_sulog_init();
 -    ksu_adb_root_init();
@@ -250,18 +249,18 @@ index abf3eb8d..a53e4139 100644
  
 -    if (ksu_late_loaded) {
 -        pr_info("late load mode, skipping kprobe hooks\n");
-+    ksu_sucompat_init();
- 
+-
 -        apply_kernelsu_rules();
 -        cache_sid();
 -        setup_ksu_cred();
-+    ksu_setuid_hook_init();
++    ksu_sucompat_init();
  
 -        // Grant current process (ksud late-load) root
 -        // with KSU SELinux domain before enforcing SELinux, so it
 -        // can continue to access /data/app etc. after enforcement.
 -        escape_to_root_for_init();
--
++    ksu_setuid_hook_init();
+ 
 -        ksu_allowlist_init();
 -        ksu_load_allow_list();
 -
@@ -465,10 +464,10 @@ index 754dba23..f08a101b 100644
  void ksu_adb_root_init(void);
  
 diff --git a/kernel/feature/kernel_umount.c b/kernel/feature/kernel_umount.c
-index 9caaf9b5..63734603 100644
+index 9caaf9b5..4da2ea9c 100644
 --- a/kernel/feature/kernel_umount.c
 +++ b/kernel/feature/kernel_umount.c
-@@ -87,35 +87,9 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+@@ -87,30 +87,6 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
          return 0;
      }
  
@@ -498,20 +497,6 @@ index 9caaf9b5..63734603 100644
 -    }
      // umount the target mnt
      pr_info("handle umount for uid: %d, pid: %d\n", new_uid, current->pid);
- 
--    const struct cred *saved = override_creds(ksu_cred);
--
-     struct mount_entry *entry;
-     down_read(&mount_list_lock);
-     list_for_each_entry (entry, &mount_list, list) {
-@@ -124,8 +98,6 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
-     }
-     up_read(&mount_list_lock);
- 
--    revert_creds(saved);
--
-     return 0;
- }
  
 diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
 index ca4bb84e..cfff86fa 100644
@@ -870,7 +855,7 @@ index 1afba60f..1d8da95a 100644
  #endif
 \ No newline at end of file
 diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
-index d3f3ac49..dcce5885 100644
+index d3f3ac49..ac821722 100644
 --- a/kernel/hook/setuid_hook.c
 +++ b/kernel/hook/setuid_hook.c
 @@ -11,6 +11,8 @@
@@ -882,7 +867,7 @@ index d3f3ac49..dcce5885 100644
  
  #include "policy/allowlist.h"
  #include "hook/setuid_hook.h"
-@@ -18,39 +20,73 @@
+@@ -18,39 +20,63 @@
  #include "manager/manager_identity.h"
  #include "infra/seccomp_cache.h"
  #include "supercall/supercall.h"
@@ -891,19 +876,13 @@ index d3f3ac49..dcce5885 100644
  
 -int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
 +extern u32 susfs_zygote_sid;
-+extern struct cred *ksu_cred;
 +extern void disable_seccomp(void);
-+
-+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+extern void susfs_run_sus_path_loop(void);
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
++extern struct work_struct susfs_extra_works;
 +
 +static inline void ksu_handle_extra_susfs_work(void)
  {
 -    // we rely on the fact that zygote always call setresuid(3) with same uids
-+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+    susfs_run_sus_path_loop();
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
++    schedule_work(&susfs_extra_works);
 +}
  
 -    pr_info("handle_setresuid from %d to %d\n", old_uid, new_uid);
@@ -959,15 +938,11 @@ index d3f3ac49..dcce5885 100644
 +
 +do_umount:
 +    {
-+        const struct cred *saved = override_creds(ksu_cred);
-+
 +        // Handle kernel umount
 +        ksu_handle_umount(current_uid().val, ruid);
 +
 +        // Handle extra susfs work
 +        ksu_handle_extra_susfs_work();
-+
-+        revert_creds(saved);
      }
  
 -    // Handle kernel umount
