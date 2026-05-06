@@ -499,7 +499,7 @@ index 9caaf9b5..4da2ea9c 100644
      pr_info("handle umount for uid: %d, pid: %d\n", new_uid, current->pid);
  
 diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
-index ca4bb84e..cfff86fa 100644
+index ca4bb84e..6b6a47c5 100644
 --- a/kernel/feature/sucompat.c
 +++ b/kernel/feature/sucompat.c
 @@ -11,6 +11,11 @@
@@ -555,7 +555,7 @@ index ca4bb84e..cfff86fa 100644
      pr_info("su_compat: set to %d\n", enable);
      return 0;
  }
-@@ -71,112 +88,207 @@ static char __user *ksud_user_path(void)
+@@ -71,112 +88,185 @@ static char __user *ksud_user_path(void)
      return userspace_stack_buffer(ksud_path, sizeof(ksud_path));
  }
  
@@ -662,20 +662,27 @@ index ca4bb84e..cfff86fa 100644
  
 -    if (!ksu_is_allow_uid_for_current(current_uid().val)) {
 +    if (unlikely(!filename_ptr))
-+        return 0;
-+
-+    filename = *filename_ptr;
-+    if (IS_ERR(filename))
          return 0;
 -    }
  
 -    if (unlikely(!filename_user)) {
-+    if (!ksu_handle_execveat_init(filename, (struct user_arg_ptr*)argv_user, (struct user_arg_ptr*)envp_user))
++    filename = *filename_ptr;
++    if (IS_ERR(filename))
 +        return 0;
 +
++    if (!ksu_handle_execveat_init(filename, (struct user_arg_ptr*)argv_user, (struct user_arg_ptr*)envp_user))
+         return 0;
+-    }
+ 
+-    char path[sizeof(su) + 1];
+-    memset(path, 0, sizeof(path));
+-    strncpy_from_user_nofault(path, *filename_user, sizeof(path));
 +    if (likely(memcmp(filename->name, su_path, sizeof(su_path))))
 +        return 0;
-+
+ 
+-    if (unlikely(!memcmp(path, su, sizeof(su)))) {
+-        pr_info("newfstatat su->sh!\n");
+-        *filename_user = sh_user_path();
 +    pr_info("ksu_handle_execveat_sucompat: su found\n");
 +
 +    memcpy((void *)filename->name, ksud_path, sizeof(ksud_path));
@@ -686,47 +693,19 @@ index ca4bb84e..cfff86fa 100644
 +
 +    if (!argv_user_ptr || IS_ERR(argv_user_ptr)) {
 +        pr_err("!argv_user_ptr || IS_ERR(argv_user_ptr)\n");
-         return 0;
++        return 0;
      }
  
--    char path[sizeof(su) + 1];
--    memset(path, 0, sizeof(path));
--    strncpy_from_user_nofault(path, *filename_user, sizeof(path));
 +    strncpy(tmp_filename, filename->name, SUSFS_MAX_LEN_PATHNAME - 1);
 +    pending_sucompat = ksu_sulog_capture_sucompat(tmp_filename, (struct user_arg_ptr*)argv_user, GFP_KERNEL);
 +    ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
-+    return 0;
-+}
-+
-+int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
-+            void *envp, int *flags)
-+{
-+    if (ksu_handle_execveat_ksud(fd, filename_ptr, argv, envp, flags))
-+        return 0;
-+
-+    return ksu_handle_execveat_sucompat(fd, filename_ptr, argv, envp,
-+                        flags);
-+}
-+
-+int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
-+             int *__unused_flags)
-+{
-+    char path[sizeof(su_path) + 1] = {0};
-+
-+    strncpy_from_user(path, *filename_user, sizeof(path));
- 
--    if (unlikely(!memcmp(path, su, sizeof(su)))) {
--        pr_info("newfstatat su->sh!\n");
-+    if (unlikely(!memcmp(path, su_path, sizeof(su_path)))) {
-+        pr_info("ksu_handle_faccessat: su->sh!\n");
-         *filename_user = sh_user_path();
-     }
- 
      return 0;
  }
  
 -long ksu_handle_execve_sucompat(const char __user **filename_user, int orig_nr, const struct pt_regs *regs)
--{
++int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
++            void *envp, int *flags)
+ {
 -    const char su[] = SU_PATH;
 -    const char __user *fn;
 -    const char __user *const __user *argv_user = (const char __user *const __user *)PT_REGS_PARM2(regs);
@@ -734,31 +713,24 @@ index ca4bb84e..cfff86fa 100644
 -    char path[sizeof(su) + 1];
 -    long ret;
 -    unsigned long addr;
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-+int ksu_handle_stat(int *dfd, struct filename **filename, int *flags) {
-+    if (unlikely(IS_ERR(*filename) || (*filename)->name == NULL))
-+        return 0;
- 
+-
 -    if (unlikely(!filename_user))
 -        goto do_orig_execve;
-+    if (likely(memcmp((*filename)->name, su_path, sizeof(su_path))))
++    if (ksu_handle_execveat_ksud(fd, filename_ptr, argv, envp, flags))
 +        return 0;
  
 -    if (!ksu_is_allow_uid_for_current(current_uid().val))
 -        goto do_orig_execve;
-+    pr_info("ksu_handle_stat: su->sh!\n");
-+    memcpy((void *)((*filename)->name), sh_path, sizeof(sh_path));
-+    return 0;
++    return ksu_handle_execveat_sucompat(fd, filename_ptr, argv, envp,
++                        flags);
 +}
-+#else
-+int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
-+{
-+    if (unlikely(!filename_user))
-+        return 0;
  
 -    addr = untagged_addr((unsigned long)*filename_user);
 -    fn = (const char __user *)addr;
 -    memset(path, 0, sizeof(path));
++int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
++             int *__unused_flags)
++{
 +    char path[sizeof(su_path) + 1] = {0};
  
 -    ret = strncpy_from_user(path, fn, sizeof(path));
@@ -768,7 +740,7 @@ index ca4bb84e..cfff86fa 100644
 -        pr_warn("Access filename when execve failed: %ld", ret);
 -        goto do_orig_execve;
 +    if (unlikely(!memcmp(path, su_path, sizeof(su_path)))) {
-+        pr_info("ksu_handle_stat: su->sh!\n");
++        pr_info("ksu_handle_faccessat: su->sh!\n");
 +        *filename_user = sh_user_path();
      }
  
@@ -776,14 +748,13 @@ index ca4bb84e..cfff86fa 100644
 -        goto do_orig_execve;
 +    return 0;
 +}
-+#endif // #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
  
 -    pr_info("sys_execve su found\n");
 -    pending_sucompat = ksu_sulog_capture_sucompat(*filename_user, argv_user, GFP_KERNEL);
 -    *filename_user = ksud_user_path();
-+int ksu_handle_devpts(struct inode *inode)
-+{
-+    if (!current->mm)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
++int ksu_handle_stat(int *dfd, struct filename **filename, int *flags) {
++    if (unlikely(IS_ERR(*filename) || (*filename)->name == NULL))
 +        return 0;
  
 -    ret = escape_with_root_profile();
@@ -792,32 +763,40 @@ index ca4bb84e..cfff86fa 100644
 -        ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
 -        goto do_orig_execve;
 -    }
-+    uid_t uid = current_uid().val;
-+    if (uid % 100000 < 10000)
-+        // not untrusted_app, ignore it
++    if (likely(memcmp((*filename)->name, su_path, sizeof(su_path))))
 +        return 0;
  
 -    ret = ksu_syscall_table[orig_nr](regs);
 -    if (ret < 0) {
 -        pr_err("failed to execve ksud as su: %ld, fallback to sh\n", ret);
 -        ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
--        *filename_user = sh_user_path();
++    pr_info("ksu_handle_stat: su->sh!\n");
++    memcpy((void *)((*filename)->name), sh_path, sizeof(sh_path));
++    return 0;
++}
++#else
++int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
++{
++    if (unlikely(!filename_user))
++        return 0;
++
++    char path[sizeof(su_path) + 1] = {0};
++
++    strncpy_from_user(path, *filename_user, sizeof(path));
++
++    if (unlikely(!memcmp(path, su_path, sizeof(su_path)))) {
++        pr_info("ksu_handle_stat: su->sh!\n");
+         *filename_user = sh_user_path();
 -    } else {
 -        ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
 -        return ret;
-+    if (!__ksu_is_allow_uid_for_current(uid))
-+        return 0;
-+
-+    if (ksu_file_sid) {
-+        struct inode_security_struct *sec = selinux_inode(inode);
-+        if (sec)
-+            sec->sid = ksu_file_sid;
      }
  
 -do_orig_execve:
 -    return ksu_syscall_table[orig_nr](regs);
 +    return 0;
  }
++#endif // #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
  
  // sucompat: permitted process can execute 'su' to gain root access.
  void __init ksu_sucompat_init()
