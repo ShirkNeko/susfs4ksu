@@ -2047,7 +2047,7 @@ index 8e40b0941..629658620 100644
  	audit_log_format(ab, " tclass=%s", tclass);
  
 diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
-index 7851c9fd4..1ba4890fe 100644
+index 7851c9fd4..c33736e8b 100644
 --- a/security/selinux/hooks.c
 +++ b/security/selinux/hooks.c
 @@ -107,6 +107,12 @@
@@ -2057,7 +2057,7 @@ index 7851c9fd4..1ba4890fe 100644
 +#ifdef CONFIG_KSU_SUSFS
 +extern struct selinux_policy *backup_sepolicy;
 +extern bool ksu_selinux_hide_running __read_mostly;
-+extern static int security_context_to_sid_with_policy(struct selinux_policy *policy, const char *scontext, u32 scontext_len,
++extern int security_context_to_sid_with_policy(struct selinux_policy *policy, const char *scontext, u32 scontext_len,
 +                                               u32 *sid, u32 def_sid, gfp_t gfp_flags);
 +#endif // #ifdef CONFIG_KSU_SUSFS
  
@@ -2118,7 +2118,7 @@ index 7851c9fd4..1ba4890fe 100644
  	LSM_HOOK_INIT(ismaclabel, selinux_ismaclabel),
  	LSM_HOOK_INIT(secctx_to_secid, selinux_secctx_to_secid),
 diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
-index f01c07499..d46cb33cf 100644
+index f01c07499..166f34a21 100644
 --- a/security/selinux/selinuxfs.c
 +++ b/security/selinux/selinuxfs.c
 @@ -44,6 +44,17 @@
@@ -2128,9 +2128,9 @@ index f01c07499..d46cb33cf 100644
 +#ifdef CONFIG_KSU_SUSFS
 +extern struct selinux_policy *backup_sepolicy;
 +extern bool ksu_selinux_hide_running __read_mostly;
-+extern static int security_context_to_sid_with_policy(struct selinux_policy *policy, const char *scontext, u32 scontext_len,
++extern int security_context_to_sid_with_policy(struct selinux_policy *policy, const char *scontext, u32 scontext_len,
 +                                               u32 *sid, u32 def_sid, gfp_t gfp_flags);
-+extern static int security_sid_to_context_with_policy(struct selinux_policy *policy, u32 sid, char **scontext,
++extern int security_sid_to_context_with_policy(struct selinux_policy *policy, u32 sid, char **scontext,
 +                                               u32 *scontext_len);
 +extern void security_compute_av_user_with_policy(struct selinux_policy *policy, u32 ssid, u32 tsid, u16 tclass,
 +                                                 struct av_decision *avd);
