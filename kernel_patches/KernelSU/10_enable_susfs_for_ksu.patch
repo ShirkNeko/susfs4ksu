@@ -1216,7 +1216,7 @@ index 1afba60f..1d8da95a 100644
  #endif
 \ No newline at end of file
 diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
-index d3f3ac49..ac821722 100644
+index d3f3ac49..9e2bc15d 100644
 --- a/kernel/hook/setuid_hook.c
 +++ b/kernel/hook/setuid_hook.c
 @@ -11,6 +11,8 @@
@@ -1228,7 +1228,7 @@ index d3f3ac49..ac821722 100644
  
  #include "policy/allowlist.h"
  #include "hook/setuid_hook.h"
-@@ -18,39 +20,63 @@
+@@ -18,39 +20,66 @@
  #include "manager/manager_identity.h"
  #include "infra/seccomp_cache.h"
  #include "supercall/supercall.h"
@@ -1243,6 +1243,9 @@ index d3f3ac49..ac821722 100644
 +static inline void ksu_handle_extra_susfs_work(void)
  {
 -    // we rely on the fact that zygote always call setresuid(3) with same uids
++    if (work_pending(&susfs_extra_works))
++        return;
++
 +    schedule_work(&susfs_extra_works);
 +}
  
