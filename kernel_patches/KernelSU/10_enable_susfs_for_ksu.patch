@@ -1,8 +1,8 @@
 diff --git a/kernel/Kbuild b/kernel/Kbuild
-index fd31bb51..fb75bf38 100644
+index fd31bb51..eb990887 100644
 --- a/kernel/Kbuild
 +++ b/kernel/Kbuild
-@@ -4,18 +4,7 @@ kernelsu-objs += feature/kernel_umount.o
+@@ -4,24 +4,12 @@ kernelsu-objs += feature/kernel_umount.o
  kernelsu-objs += feature/sulog.o
  kernelsu-objs += feature/sucompat.o
  
@@ -21,6 +21,12 @@ index fd31bb51..fb75bf38 100644
  
  kernelsu-objs += infra/file_wrapper.o
  kernelsu-objs += infra/event_queue.o
+ kernelsu-objs += infra/seccomp_cache.o
+ kernelsu-objs += infra/su_mount_ns.o
+-kernelsu-objs += infra/symbol_resolver.o
+ 
+ ifneq ($(CONFIG_KSU_DISABLE_MANAGER),y)
+ kernelsu-objs += manager/apk_sign.o
 diff --git a/kernel/Kconfig b/kernel/Kconfig
 index c7701661..5c169f59 100644
 --- a/kernel/Kconfig
@@ -149,7 +155,7 @@ index 068476e0..8590d1ec 100644
 +
  # Keep a new line here!! Because someone may append config
 diff --git a/kernel/core/init.c b/kernel/core/init.c
-index 99772776..56d5dab3 100644
+index 8b6bd109..56d5dab3 100644
 --- a/kernel/core/init.c
 +++ b/kernel/core/init.c
 @@ -6,6 +6,7 @@
@@ -169,13 +175,14 @@ index 99772776..56d5dab3 100644
  #include "runtime/ksud.h"
  #include "runtime/ksud_boot.h"
  #include "feature/sulog.h"
-@@ -22,17 +21,11 @@
+@@ -22,18 +21,11 @@
  #include "ksu.h"
  #include "infra/file_wrapper.h"
  #include "selinux/selinux.h"
 -#include "hook/syscall_hook.h"
  #include "feature/adb_root.h"
  #include "feature/selinux_hide.h"
+-#include "infra/symbol_resolver.h"
 +#include "hook/setuid_hook.h"
 +#include "feature/sucompat.h"
  
@@ -189,7 +196,7 @@ index 99772776..56d5dab3 100644
  
  // workaround for A12-5.10 kernel
  // Some third-party kernel (e.g. linegaeOS) uses wrong toolchain, which supports
-@@ -70,7 +63,6 @@ __attribute__((naked)) int __init kernelsu_init_early(void)
+@@ -71,7 +63,6 @@ __attribute__((naked)) int __init kernelsu_init_early(void)
  #endif
  
  struct cred *ksu_cred;
@@ -197,7 +204,7 @@ index 99772776..56d5dab3 100644
  
  #ifdef CONFIG_KSU_DEBUG
  bool allow_shell = true;
-@@ -81,28 +73,6 @@ module_param(allow_shell, bool, 0);
+@@ -82,28 +73,6 @@ module_param(allow_shell, bool, 0);
  
  int __init kernelsu_init(void)
  {
@@ -226,7 +233,7 @@ index 99772776..56d5dab3 100644
  #ifdef CONFIG_KSU_DEBUG
      pr_alert("*************************************************************");
      pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
-@@ -112,6 +82,7 @@ int __init kernelsu_init(void)
+@@ -113,6 +82,7 @@ int __init kernelsu_init(void)
      pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
      pr_alert("*************************************************************");
  #endif
@@ -234,10 +241,11 @@ index 99772776..56d5dab3 100644
      if (allow_shell) {
          pr_alert("shell is allowed at init!");
      }
-@@ -121,74 +92,40 @@ int __init kernelsu_init(void)
+@@ -122,75 +92,40 @@ int __init kernelsu_init(void)
          pr_err("prepare cred failed!\n");
      }
  
+-    ksu_init_symbol_resolver();
 -    ksu_syscall_hook_init();
 +#ifdef CONFIG_KSU_SUSFS
 +    susfs_init();
@@ -322,7 +330,7 @@ index 99772776..56d5dab3 100644
  
      // Wait for any in-flight RCU readers (e.g. handler traversing allow_list)
      synchronize_rcu();
-@@ -201,9 +138,11 @@ void __exit kernelsu_exit(void)
+@@ -203,9 +138,11 @@ void __exit kernelsu_exit(void)
      ksu_allowlist_exit();
  
      ksu_selinux_hide_exit();
@@ -502,10 +510,16 @@ index 9caaf9b5..4da2ea9c 100644
      pr_info("handle umount for uid: %d, pid: %d\n", new_uid, current->pid);
  
 diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
-index fa78d97d..287ec6bd 100644
+index 26fe2636..0f1c4c50 100644
 --- a/kernel/feature/selinux_hide.c
 +++ b/kernel/feature/selinux_hide.c
-@@ -12,6 +12,7 @@
+@@ -1,5 +1,4 @@
+ #include "selinux_hide.h"
+-#include "infra/symbol_resolver.h"
+ #include "selinux/sepolicy.h"
+ #include <linux/cred.h>
+ #include <linux/cpu.h>
+@@ -13,6 +12,7 @@
  #include <net/genetlink.h>
  #include <linux/moduleparam.h>
  #include <linux/mutex.h>
@@ -513,7 +527,7 @@ index fa78d97d..287ec6bd 100644
  // security/selinux/include/security.h
  #include <security.h>
  #include <ss/context.h>
-@@ -20,47 +21,18 @@
+@@ -21,314 +21,55 @@
  #include <ss/conditional.h>
  #include "avc.h"
  #include "klog.h" // IWYU pragma: keep
@@ -562,12 +576,12 @@ index fa78d97d..287ec6bd 100644
 -static void security_compute_av_user_with_policy(struct selinux_policy *policy, u32 ssid, u32 tsid, u16 tclass,
 +void security_compute_av_user_with_policy(struct selinux_policy *policy, u32 ssid, u32 tsid, u16 tclass,
                                                   struct av_decision *avd);
- static void (*security_dump_masked_av_fn)(struct policydb *policydb, struct context *scontext, struct context *tcontext,
-                                           u16 tclass, u32 permissions, const char *reason) = NULL;
-@@ -68,188 +40,16 @@ static void (*context_struct_compute_av_fn)(struct policydb *policydb, struct co
-                                             struct context *tcontext, u16 tclass, struct av_decision *avd,
-                                             struct extended_perms *xperms) = NULL;
- #else
+-static void (*security_dump_masked_av_fn)(struct policydb *policydb, struct context *scontext, struct context *tcontext,
+-                                          u16 tclass, u32 permissions, const char *reason) = NULL;
+-static void (*context_struct_compute_av_fn)(struct policydb *policydb, struct context *scontext,
+-                                            struct context *tcontext, u16 tclass, struct av_decision *avd,
+-                                            struct extended_perms *xperms) = NULL;
+-#else
 -static struct selinux_state fake_state;
 -#endif
 -
@@ -724,7 +738,19 @@ index fa78d97d..287ec6bd 100644
 -        }
 -#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
 -        error = security_context_to_sid_with_policy(backup_sepolicy, str, size, &sid, SECSID_NULL, GFP_KERNEL);
--#else
++extern void security_dump_masked_av_fn(struct policydb *policydb,
++				    struct context *scontext,
++				    struct context *tcontext,
++				    u16 tclass,
++				    u32 permissions,
++				    const char *reason);
++extern void context_struct_compute_av_fn(struct policydb *policydb,
++				      struct context *scontext,
++				      struct context *tcontext,
++				      u16 tclass,
++				      struct av_decision *avd,
++				      struct extended_perms *xperms);
+ #else
 -        error = security_context_to_sid(&fake_state, str, size, &sid, GFP_KERNEL);
 +struct selinux_state fake_state;
  #endif
@@ -732,11 +758,11 @@ index fa78d97d..287ec6bd 100644
 -            return error;
 -        }
 -    }
--
+ 
 -call_orig:
 -    return ((setprocattr_fn)selinux_setprocattr_hook.original)(name, value, size);
 -}
- 
+-
 -static void ksu_selinux_hide_unhook();
  static int ksu_selinux_hide_enable()
  {
@@ -746,15 +772,23 @@ index fa78d97d..287ec6bd 100644
          pr_err("no backup sepolicy available, please save feature and reboot to retry!\n");
          return -EAGAIN;
      }
--    selinux_write_op = kallsyms_lookup_name("write_op");
+-    selinux_write_op = find_kernel_symbol_exact("write_op");
 -    if (!selinux_write_op) {
 -        pr_err("selinux_hide: no write_op found!\n");
 -        return -ENOSYS;
 -    }
  
  #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
-     security_dump_masked_av_fn = kallsyms_lookup_name("security_dump_masked_av");
-@@ -265,69 +65,12 @@ static int ksu_selinux_hide_enable()
+-    security_dump_masked_av_fn = find_kernel_symbol_exact("security_dump_masked_av");
+-    if (!security_dump_masked_av_fn) {
+-        pr_warn("security_dump_masked_av not found!\n");
+-    }
+-    context_struct_compute_av_fn = find_kernel_symbol_exact("context_struct_compute_av");
+-    if (!context_struct_compute_av_fn) {
+-        pr_warn("context_struct_compute_av not found!\n");
+-    }
+ #else
+     fake_state.initialized = true;
      fake_state.policy = backup_sepolicy;
  #endif
  
@@ -825,7 +859,7 @@ index fa78d97d..287ec6bd 100644
  
  static int selinux_hide_feature_get(u64 *value)
  {
-@@ -351,10 +94,11 @@ static int selinux_hide_feature_set(u64 value)
+@@ -352,10 +93,11 @@ static int selinux_hide_feature_set(u64 value)
          }
      } else {
          if (ksu_selinux_hide_running) {
@@ -838,7 +872,7 @@ index fa78d97d..287ec6bd 100644
      mutex_unlock(&selinux_hide_mutex);
      return ret;
  }
-@@ -377,7 +121,6 @@ void __exit ksu_selinux_hide_exit()
+@@ -378,7 +120,6 @@ void __exit ksu_selinux_hide_exit()
  {
      mutex_lock(&selinux_hide_mutex);
      if (ksu_selinux_hide_running) {
@@ -846,7 +880,7 @@ index fa78d97d..287ec6bd 100644
          ksu_selinux_hide_running = false;
      }
      mutex_unlock(&selinux_hide_mutex);
-@@ -476,7 +219,7 @@ out:
+@@ -477,7 +218,7 @@ out:
      return rc;
  }
  
@@ -855,7 +889,7 @@ index fa78d97d..287ec6bd 100644
                                                 u32 *sid, u32 def_sid, gfp_t gfp_flags)
  {
      struct policydb *policydb;
-@@ -583,7 +326,7 @@ static int sidtab_entry_to_string(struct policydb *p, struct sidtab *sidtab, str
+@@ -584,7 +325,7 @@ static int sidtab_entry_to_string(struct policydb *p, struct sidtab *sidtab, str
      return rc;
  }
  
@@ -864,7 +898,7 @@ index fa78d97d..287ec6bd 100644
                                                 u32 *scontext_len)
  {
      struct policydb *policydb;
-@@ -956,7 +699,7 @@ static void context_struct_compute_av(struct policydb *policydb, struct context
+@@ -957,7 +698,7 @@ static void context_struct_compute_av(struct policydb *policydb, struct context
      type_attribute_bounds_av(policydb, scontext, tcontext, tclass, avd);
  }
  
@@ -873,7 +907,7 @@ index fa78d97d..287ec6bd 100644
                                                           struct av_decision *avd)
  {
      struct policydb *policydb;
-@@ -1003,4 +746,4 @@ allow:
+@@ -1004,4 +745,4 @@ allow:
      avd->allowed = 0xffffffff;
      goto out;
  }
