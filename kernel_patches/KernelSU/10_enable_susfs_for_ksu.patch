@@ -510,7 +510,7 @@ index 9caaf9b5..4da2ea9c 100644
      pr_info("handle umount for uid: %d, pid: %d\n", new_uid, current->pid);
  
 diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
-index 36601198..3026ef5e 100644
+index 5bb59bfe..1b34903f 100644
 --- a/kernel/feature/selinux_hide.c
 +++ b/kernel/feature/selinux_hide.c
 @@ -1,6 +1,4 @@
@@ -624,7 +624,19 @@ index 36601198..3026ef5e 100644
 -               __func__, len);
 -        goto out;
 -    }
--#else
++extern void security_dump_masked_av_fn(struct policydb *policydb,
++				    struct context *scontext,
++				    struct context *tcontext,
++				    u16 tclass,
++				    u32 permissions,
++				    const char *reason);
++extern void context_struct_compute_av_fn(struct policydb *policydb,
++				      struct context *scontext,
++				      struct context *tcontext,
++				      u16 tclass,
++				      struct av_decision *avd,
++				      struct extended_perms *xperms);
+ #else
 -    length = avc_has_perm(&selinux_state, current_sid(), SECINITSID_SECURITY, SECCLASS_SECURITY,
 -                          SECURITY__CHECK_CONTEXT, NULL);
 -    if (length)
@@ -637,15 +649,18 @@ index 36601198..3026ef5e 100644
 -    length = security_sid_to_context(&fake_state, sid, &canon, &len);
 -    if (length)
 -        goto out;
--#endif
--
++struct selinux_state fake_state;
+ #endif
+ 
 -    memcpy(buf, canon, len);
 -    length = len;
 -out:
 -    kfree(canon);
 -    return length;
 -}
--
++DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);
++struct page *fake_status = NULL;
+ 
 -static ssize_t my_write_access(struct file *file, char *buf, size_t size)
 -{
 -    // apply to all app uids
@@ -745,33 +760,18 @@ index 36601198..3026ef5e 100644
 -        }
 -#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
 -        error = security_context_to_sid_with_policy(backup_sepolicy, str, size, &sid, SECSID_NULL, GFP_KERNEL);
-+extern void security_dump_masked_av_fn(struct policydb *policydb,
-+				    struct context *scontext,
-+				    struct context *tcontext,
-+				    u16 tclass,
-+				    u32 permissions,
-+				    const char *reason);
-+extern void context_struct_compute_av_fn(struct policydb *policydb,
-+				      struct context *scontext,
-+				      struct context *tcontext,
-+				      u16 tclass,
-+				      struct av_decision *avd,
-+				      struct extended_perms *xperms);
- #else
+-#else
 -        error = security_context_to_sid(&fake_state, str, size, &sid, GFP_KERNEL);
-+struct selinux_state fake_state;
- #endif
+-#endif
 -        if (error) {
 -            return error;
 -        }
 -    }
- 
+-
 -call_orig:
 -    return ((setprocattr_fn)selinux_setprocattr_hook.original)(name, value, size);
 -}
-+DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);
-+struct page *fake_status = NULL;
- 
+-
 -static DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);
 -static struct page *fake_status = NULL;
 -
@@ -795,10 +795,10 @@ index 36601198..3026ef5e 100644
      memcpy(new_status, status, sizeof(*status));
 -    if (ksu_late_loaded && !new_status->enforcing) {
 -        // In late_load mode, we may be loaded when selinux was set to permissive
--        // So we need to adjust the sequence value
+-        // So we need to modify the sequence value
 -        // We assume that setenforce 0 is just called once
 -        new_status->enforcing = 1;
--        new_status->sequence = 4;
+-        new_status->sequence = new_status->policyload ? 4 : 0;
 -    }
  
      fake_status = new_page;
@@ -1049,13 +1049,6 @@ index 36601198..3026ef5e 100644
                                                           struct av_decision *avd)
  {
      struct policydb *policydb;
-@@ -1132,4 +802,4 @@ allow:
-     avd->allowed = 0xffffffff;
-     goto out;
- }
--#endif
-+#endif
-\ No newline at end of file
 diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
 index ca4bb84e..6b6a47c5 100644
 --- a/kernel/feature/sucompat.c
