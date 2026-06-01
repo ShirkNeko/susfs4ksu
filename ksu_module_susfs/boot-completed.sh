@@ -12,7 +12,7 @@ cat <<EOF >/dev/null
 
 ## This is just an example to add the sus mounts to kernel umount ##
 if [ ! -f "/data/adb/susfs_no_auto_add_kernel_umount" ]; then
-	cat /proc/1/mountinfo | grep -E "^5[0-9]{5,} .*$|KSU" | awk '{print $5}' | while read -r LINE; do /data/adb/ksu/bin/ksud kernel umount add --flags 2 "${LINE}" 2>/dev/null; done
+	cat /proc/1/mountinfo | grep -E "^2[0-9]{9,} .*$|KSU" | awk '{print $5}' | while read -r LINE; do /data/adb/ksu/bin/ksud kernel umount add --flags 2 "${LINE}" 2>/dev/null; done
 fi
 EOF
 
