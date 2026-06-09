@@ -2334,7 +2334,7 @@ index 635ec01c..c7b28b86 100644
  int ksu_sulog_emit_grant_root(int retval, __u32 uid, __u32 euid, gfp_t gfp);
  
 diff --git a/kernel/supercall/dispatch.c b/kernel/supercall/dispatch.c
-index 1990b5d1..eb0eebde 100644
+index 17e9d87a..013d2184 100644
 --- a/kernel/supercall/dispatch.c
 +++ b/kernel/supercall/dispatch.c
 @@ -3,6 +3,8 @@
@@ -2364,7 +2364,17 @@ index 1990b5d1..eb0eebde 100644
  #ifdef EXPECTED_SIZE2
      cmd.flags |= KSU_GET_INFO_FLAG_PR_BUILD;
  #endif
-@@ -77,12 +75,8 @@ static int do_report_event(void __user *arg)
+@@ -76,9 +74,6 @@ static int do_get_info_legacy(void __user *arg)
+     if (is_manager()) {
+         cmd.flags |= KSU_GET_INFO_FLAG_MANAGER;
+     }
+-    if (ksu_late_loaded) {
+-        cmd.flags |= KSU_GET_INFO_FLAG_LATE_LOAD;
+-    }
+ #ifdef EXPECTED_SIZE2
+     cmd.flags |= KSU_GET_INFO_FLAG_PR_BUILD;
+ #endif
+@@ -105,12 +100,8 @@ static int do_report_event(void __user *arg)
          static bool post_fs_data_lock = false;
          if (!post_fs_data_lock) {
              post_fs_data_lock = true;
@@ -2379,7 +2389,7 @@ index 1990b5d1..eb0eebde 100644
          }
          break;
      }
-@@ -90,12 +84,9 @@ static int do_report_event(void __user *arg)
+@@ -118,12 +109,9 @@ static int do_report_event(void __user *arg)
          static bool boot_complete_lock = false;
          if (!boot_complete_lock) {
              boot_complete_lock = true;
@@ -2395,7 +2405,7 @@ index 1990b5d1..eb0eebde 100644
          }
          break;
      }
-@@ -340,7 +331,6 @@ static int do_set_app_profile(void __user *arg)
+@@ -368,7 +356,6 @@ static int do_set_app_profile(void __user *arg)
      ret = ksu_set_app_profile(&cmd.profile);
      if (!ret) {
          ksu_persistent_allow_list();
@@ -2403,7 +2413,7 @@ index 1990b5d1..eb0eebde 100644
      }
      return ret;
  }
-@@ -417,49 +407,32 @@ static int do_manage_mark(void __user *arg)
+@@ -445,49 +432,32 @@ static int do_manage_mark(void __user *arg)
      }
  
      switch (cmd.operation) {
@@ -2474,7 +2484,7 @@ index 1990b5d1..eb0eebde 100644
      }
      if (copy_to_user(arg, &cmd, sizeof(cmd))) {
          pr_err("manage_mark: copy_to_user failed\n");
-@@ -469,6 +442,87 @@ static int do_manage_mark(void __user *arg)
+@@ -497,6 +467,87 @@ static int do_manage_mark(void __user *arg)
      return 0;
  }
  
