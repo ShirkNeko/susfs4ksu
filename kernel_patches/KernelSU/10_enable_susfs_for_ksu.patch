@@ -1510,10 +1510,10 @@ index 95c9edb1..7f2870a8 100644
  extern struct selinux_policy *backup_sepolicy;
  extern bool ksu_no_custom_rc;
 diff --git a/kernel/policy/allowlist.c b/kernel/policy/allowlist.c
-index d5eac53f..c1f27f06 100644
+index 89e8d089..4dc879e8 100644
 --- a/kernel/policy/allowlist.c
 +++ b/kernel/policy/allowlist.c
-@@ -306,14 +306,7 @@ bool ksu_uid_should_umount(uid_t uid)
+@@ -294,14 +294,7 @@ bool ksu_uid_should_umount(uid_t uid)
  {
      struct app_profile *profile;
      bool res;
@@ -1530,7 +1530,7 @@ index d5eac53f..c1f27f06 100644
      return !__ksu_is_allow_uid(uid);
  #else
 diff --git a/kernel/policy/app_profile.c b/kernel/policy/app_profile.c
-index 1b9f506a..7da23cf5 100644
+index 01ac883b..ab23b421 100644
 --- a/kernel/policy/app_profile.c
 +++ b/kernel/policy/app_profile.c
 @@ -14,7 +14,6 @@
@@ -1559,30 +1559,38 @@ index 1b9f506a..7da23cf5 100644
      struct root_profile *profile = NULL;
      struct user_struct *new_user;
  
-@@ -117,7 +114,7 @@ int escape_with_root_profile(void)
+@@ -117,11 +114,6 @@ int escape_with_root_profile(void)
          return -ENOMEM;
      }
  
 -    if (cred->euid.val == 0) {
-+    if (susfs_is_current_ksu_domain()) {
-         pr_warn("Already root, don't escape!\n");
+-        pr_warn("Already root, don't escape!\n");
+-        goto out_abort_creds;
+-    }
+-
+     if (test_thread_flag(TIF_KSU_DISABLE_ESCAPE_WITH_ROOT)) {
+         pr_warn("TIF_KSU_DISABLE_ESCAPE_WITH_ROOT found, don't escape!\n");
          goto out_abort_creds;
-     }
-@@ -179,11 +176,8 @@ int escape_with_root_profile(void)
+@@ -184,16 +176,13 @@ int escape_with_root_profile(void)
  
      commit_creds(cred);
  
 -    disable_seccomp();
--
--    for_each_thread (p, t) {
--        ksu_set_task_tracepoint_flag(t);
--    }
 +    if (likely(test_thread_flag(TIF_SECCOMP)))
 +        disable_seccomp();
  
+     if (profile->flags & FLAG_KSU_NO_NEW_PRIVS) {
+         set_thread_flag(TIF_KSU_DISABLE_ESCAPE_WITH_ROOT);
+     }
+ 
+-    for_each_thread (p, t) {
+-        ksu_set_task_tracepoint_flag(t);
+-    }
+-
      setup_mount_ns(profile->namespaces);
      ksu_put_root_profile(profile);
-@@ -196,14 +190,16 @@ out_abort_creds:
+     return 0;
+@@ -205,14 +194,16 @@ out_abort_creds:
      return ret;
  }
  
@@ -1602,10 +1610,10 @@ index 1b9f506a..7da23cf5 100644
 +    return 0;
  }
 diff --git a/kernel/policy/app_profile.h b/kernel/policy/app_profile.h
-index 5f67ed59..bd89937a 100644
+index 5a4097ae..f63c84a8 100644
 --- a/kernel/policy/app_profile.h
 +++ b/kernel/policy/app_profile.h
-@@ -4,6 +4,6 @@
+@@ -8,6 +8,6 @@
  // Escalate current process to root with the appropriate profile
  int escape_with_root_profile(void);
  
@@ -2334,18 +2342,18 @@ index 635ec01c..c7b28b86 100644
  int ksu_sulog_emit_grant_root(int retval, __u32 uid, __u32 euid, gfp_t gfp);
  
 diff --git a/kernel/supercall/dispatch.c b/kernel/supercall/dispatch.c
-index 17e9d87a..013d2184 100644
+index 68c333f1..e340fc74 100644
 --- a/kernel/supercall/dispatch.c
 +++ b/kernel/supercall/dispatch.c
-@@ -3,6 +3,8 @@
- #include <linux/slab.h>
+@@ -4,6 +4,8 @@
  #include <linux/uaccess.h>
  #include <linux/version.h>
+ #include <linux/thread_info.h>
 +#include <linux/namei.h>
 +#include <linux/susfs.h>
- 
  #include "uapi/supercall.h"
  #include "supercall/internal.h"
+ #include "arch.h" // IWYU pragma: keep
 @@ -16,7 +18,6 @@
  #include "manager/manager_identity.h"
  #include "selinux/selinux.h"
