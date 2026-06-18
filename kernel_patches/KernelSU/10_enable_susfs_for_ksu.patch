@@ -2205,10 +2205,10 @@ index 38d1476f..b2fbd294 100644
          free_module_rc();
      }
 diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
-index 6ead379a..6bbdd15c 100644
+index 762a7c55..250676f3 100644
 --- a/kernel/selinux/rules.c
 +++ b/kernel/selinux/rules.c
-@@ -153,6 +153,8 @@ void apply_kernelsu_rules()
+@@ -160,6 +160,8 @@ void apply_kernelsu_rules()
      ksu_destroy_sepolicy(old_pol);
  
      reset_avc_cache();
