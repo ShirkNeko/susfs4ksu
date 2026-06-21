@@ -1164,7 +1164,7 @@ static int copy_config_to_buf(const char *config_string, char *buf_ptr, size_t *
 		SUSFS_LOGE("bufsize is not big enough to hold the string.\n");
 		return -EINVAL;
 	}
-	strscpy(buf_ptr, config_string, tmp_size);
+	memcpy(buf_ptr, config_string, tmp_size);
 	return 0;
 }
 
