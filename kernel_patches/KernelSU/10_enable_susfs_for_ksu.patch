@@ -2,7 +2,7 @@ diff --git a/kernel/Kbuild b/kernel/Kbuild
 index 85932d39..f15b42e2 100644
 --- a/kernel/Kbuild
 +++ b/kernel/Kbuild
-@@ -4,24 +4,12 @@ kernelsu-objs += feature/kernel_umount.o
+@@ -4,24 +4,13 @@ kernelsu-objs += feature/kernel_umount.o
  kernelsu-objs += feature/sulog.o
  kernelsu-objs += feature/sucompat.o
  
@@ -23,7 +23,7 @@ index 85932d39..f15b42e2 100644
  kernelsu-objs += infra/event_queue.o
  kernelsu-objs += infra/seccomp_cache.o
  kernelsu-objs += infra/su_mount_ns.o
--kernelsu-objs += infra/symbol_resolver.o
+ kernelsu-objs += infra/symbol_resolver.o
  
  ifneq ($(CONFIG_KSU_DISABLE_MANAGER),y)
  kernelsu-objs += manager/apk_sign.o
@@ -1121,6 +1121,24 @@ index fbb6c44f..1b34903f 100644
                                                           struct av_decision *avd)
  {
      struct policydb *policydb;
+@@ -474,7 +474,7 @@ static void __nocfi type_attribute_bounds_av(struct policydb *policydb, struct c
+     avd->allowed &= ~masked;
+ 
+     /* audit masked permissions */
+-    if (security_dump_masked_av_fn)
++    if ((void *)security_dump_masked_av_fn != NULL)
+         security_dump_masked_av_fn(policydb, scontext, tcontext, tclass, masked, "bounds");
+ }
+ 
+@@ -791,7 +791,7 @@ void __nocfi security_compute_av_user_with_policy(struct selinux_policy *policy,
+         goto out;
+     }
+ 
+-    if (context_struct_compute_av_fn) {
++    if ((void *)context_struct_compute_av_fn != NULL) {
+         context_struct_compute_av_fn(policydb, scontext, tcontext, tclass, avd, NULL);
+     } else {
+         context_struct_compute_av(policydb, scontext, tcontext, tclass, avd, NULL);
 diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
 index 3418600c..e784aba5 100644
 --- a/kernel/feature/sucompat.c
