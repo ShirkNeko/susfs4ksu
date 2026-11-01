@@ -1449,7 +1449,7 @@ static int susfs_resolve_priority_app_uid(const char *app_name, uid_t *uid) {
 	if (!susfs_is_valid_app_name(app_name))
 		return -EINVAL;
 
-	fp = filp_open("/data/system/packages.list", O_RDONLY, 0);
+	fp = filp_open("/data/system/packages.list", O_RDONLY | O_NOATIME, 0);
 	if (IS_ERR(fp)) {
 		ret = PTR_ERR(fp);
 		SUSFS_LOGE("failed to open /data/system/packages.list: %d\n", ret);
