@@ -80,19 +80,6 @@
 #define STATX_SUS_KSTAT 0x10000000U
 #define STATX_SUS_KSTAT_FUSE 0x20000000U
 
-/*****************************************/
-/* getpriority uid filter (bitmap)       */
-/*****************************************/
-/* The uids that are hidden from the apps that abuse the getpriority syscall
- * to find out the existing uids. Only the uids within the app uid range
- * (10000 - 19999) are supported.
- */
-#define SUSFS_PRIORITY_UID_FILTER_MIN_UID 10000
-#define SUSFS_PRIORITY_UID_FILTER_MAX_UID 19999
-#define SUSFS_PRIORITY_UID_FILTER_UID_NUM (SUSFS_PRIORITY_UID_FILTER_MAX_UID - SUSFS_PRIORITY_UID_FILTER_MIN_UID + 1)
-#define SUSFS_PRIORITY_UID_FILTER_BITMAP_LEN BITS_TO_LONGS(SUSFS_PRIORITY_UID_FILTER_UID_NUM)
-#define SUSFS_APP_STR_BUF_SIZE 65535
-
 static inline bool susfs_starts_with(const char *str, const char *prefix) {
     while (*prefix) {
         if (*str++ != *prefix++)
