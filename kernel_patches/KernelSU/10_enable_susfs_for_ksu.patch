@@ -2581,10 +2581,10 @@ index e5dcc4d3..72084b64 100644
 +}
 +
 diff --git a/kernel/selinux/selinux.h b/kernel/selinux/selinux.h
-index b1918a42..4eee3f1c 100644
+index b1918a42..5873f03e 100644
 --- a/kernel/selinux/selinux.h
 +++ b/kernel/selinux/selinux.h
-@@ -55,4 +55,13 @@ static inline int ksu_selinux_inode_init(void)
+@@ -55,4 +55,12 @@ static inline int ksu_selinux_inode_init(void)
  
  extern u32 ksu_file_sid;
  
@@ -2596,7 +2596,6 @@ index b1918a42..4eee3f1c 100644
 +bool susfs_is_current_zygote_next_domain(void);
 +bool susfs_is_current_ksu_domain(void);
 +bool susfs_is_current_init_domain(void);
-+extern void susfs_add_sus_type_by_type_name(char *type_name);
  #endif
 diff --git a/kernel/selinux/sepolicy.c b/kernel/selinux/sepolicy.c
 index b00e5175..e2e59d1a 100644
