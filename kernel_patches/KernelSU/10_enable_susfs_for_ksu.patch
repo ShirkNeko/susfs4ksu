@@ -35,7 +35,7 @@ index 66aa2ba9..9b88d179 100644
  
  ccflags-y += -I$(srctree)/security/selinux -I$(srctree)/security/selinux/include
 diff --git a/kernel/Kconfig b/kernel/Kconfig
-index 88e22811..fcb0e664 100644
+index 88e22811..a9f796d3 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
 @@ -2,7 +2,6 @@ menu "KernelSU"
@@ -46,7 +46,7 @@ index 88e22811..fcb0e664 100644
  	default y
  	help
  	  Enable kernel-level root privileges on Android System.
-@@ -35,12 +34,98 @@ config KSU_DISABLE_POLICY
+@@ -35,12 +34,106 @@ config KSU_DISABLE_POLICY
  	  Escalation will always use the default full root profile, and
  	  non-root handling will follow the global umount policy only.
  
@@ -104,7 +104,9 @@ index 88e22811..fcb0e664 100644
 +	bool "Enable logging susfs log to kernel"
 +	depends on KSU_SUSFS
 +	default y
-+	help
+ 	help
+-	  Dynamically patch x64's hardened syscall dispatcher to support syscall hooks. This is a
+-	  replacement for a kernel source code patch, and is useful for x86_64 LKM mode.
 +	  - Allow logging susfs log to kernel, uncheck it to completely disable all susfs log.
 +
 +config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
@@ -119,9 +121,7 @@ index 88e22811..fcb0e664 100644
 +	bool "Enable to spoof /proc/bootconfig (gki) or /proc/cmdline (non-gki)"
 +	depends on KSU_SUSFS
 +	default y
- 	help
--	  Dynamically patch x64's hardened syscall dispatcher to support syscall hooks. This is a
--	  replacement for a kernel source code patch, and is useful for x86_64 LKM mode.
++	help
 +	  - Spoof the output of /proc/bootconfig (gki) or /proc/cmdline (non-gki) with a user-defined file.
 +	  - Effective on all processes.
 +
@@ -147,6 +147,14 @@ index 88e22811..fcb0e664 100644
 +	  - It may not be able to evade detections by apps that implement a good injection detection.
 +	  - Effective only on zygote/zygote_next spawned user app process that is marked with TIF_PROC_UMOUNTED
 +	    and with (uid % 100000) >= 10000.
++
++config KSU_SUSFS_PRIORITY_UID_FILTER
++	bool "Enable to allow adding user-defined uids that will be hidden from getpriority/setpriority/ioprio_get/ioprio_set syscall"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow hiding user-defined uids from syscalls like getpriority/setpriority/ioprio_get/ioprio_set.
++	  - Effective on all processes with uid >= 10000.
 +
 +endmenu
  
@@ -1626,7 +1634,7 @@ index be25a826..7f2870a8 100644
  extern bool ksu_no_custom_rc;
  
 diff --git a/kernel/manager/pkg_observer.c b/kernel/manager/pkg_observer.c
-index dc785e37..05850c84 100644
+index dc785e37..34d5b240 100644
 --- a/kernel/manager/pkg_observer.c
 +++ b/kernel/manager/pkg_observer.c
 @@ -8,6 +8,7 @@
@@ -1637,12 +1645,14 @@ index dc785e37..05850c84 100644
  #include "klog.h" // IWYU pragma: keep
  #include "manager/throne_tracker.h"
  
-@@ -30,6 +31,8 @@ static void ksu_track_throne_tw_func(struct callback_head *cb)
+@@ -30,6 +31,10 @@ static void ksu_track_throne_tw_func(struct callback_head *cb)
      if (current->flags & PF_EXITING)
          return;
      track_throne(false);
++#ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
 +    // Renew the priority uid bitmap filter
 +    susfs_parse_priority_app_strings();
++#endif // #ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
  }
  
  // Never scan from the fsnotify handler: fsnotify_mark_srcu and the rename's dir
@@ -2862,7 +2872,7 @@ index 635ec01c..c7b28b86 100644
  int ksu_sulog_emit_grant_root(int retval, __u32 uid, __u32 euid, gfp_t gfp);
  
 diff --git a/kernel/supercall/dispatch.c b/kernel/supercall/dispatch.c
-index caf18c7c..15dbc66c 100644
+index caf18c7c..181ce099 100644
 --- a/kernel/supercall/dispatch.c
 +++ b/kernel/supercall/dispatch.c
 @@ -8,6 +8,8 @@
@@ -3031,7 +3041,7 @@ index caf18c7c..15dbc66c 100644
      }
      if (copy_to_user(arg, &cmd, sizeof(cmd))) {
          pr_err("manage_mark: copy_to_user failed\n");
-@@ -532,6 +496,90 @@ static int do_manage_mark(void __user *arg)
+@@ -532,6 +496,92 @@ static int do_manage_mark(void __user *arg)
      return 0;
  }
  
@@ -3093,9 +3103,11 @@ index caf18c7c..15dbc66c 100644
 +                susfs_add_sus_map(arg);
 +                return 0;
 +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
++#ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
 +            case CMD_SUSFS_SET_PRIORITY_UID_FILTER:
 +                susfs_set_priority_uid_filter(arg);
 +                return 0;
++#endif // #ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
 +            case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING:
 +                susfs_set_avc_log_spoofing(arg);
 +                return 0;
