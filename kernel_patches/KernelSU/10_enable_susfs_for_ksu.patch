@@ -1634,7 +1634,7 @@ index be25a826..7f2870a8 100644
  extern bool ksu_no_custom_rc;
  
 diff --git a/kernel/manager/pkg_observer.c b/kernel/manager/pkg_observer.c
-index dc785e37..05850c84 100644
+index dc785e37..34d5b240 100644
 --- a/kernel/manager/pkg_observer.c
 +++ b/kernel/manager/pkg_observer.c
 @@ -8,6 +8,7 @@
@@ -1645,12 +1645,14 @@ index dc785e37..05850c84 100644
  #include "klog.h" // IWYU pragma: keep
  #include "manager/throne_tracker.h"
  
-@@ -30,6 +31,8 @@ static void ksu_track_throne_tw_func(struct callback_head *cb)
+@@ -30,6 +31,10 @@ static void ksu_track_throne_tw_func(struct callback_head *cb)
      if (current->flags & PF_EXITING)
          return;
      track_throne(false);
++#ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
 +    // Renew the priority uid bitmap filter
 +    susfs_parse_priority_app_strings();
++#endif // #ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
  }
  
  // Never scan from the fsnotify handler: fsnotify_mark_srcu and the rename's dir
