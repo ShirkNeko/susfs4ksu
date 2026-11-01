@@ -1373,6 +1373,19 @@ out_copy_to_user:
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
 
 /* priority uid filter */
+#ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
+/*****************************************/
+/* getpriority uid filter (bitmap)       */
+/*****************************************/
+/* The uids that are hidden from the apps that abuse the getpriority syscall
+ * to find out the existing uids. Only the uids within the app uid range
+ * (10000 - 19999) are supported.
+ */
+#define SUSFS_PRIORITY_UID_FILTER_MIN_UID 10000
+#define SUSFS_PRIORITY_UID_FILTER_MAX_UID 19999
+#define SUSFS_PRIORITY_UID_FILTER_UID_NUM (SUSFS_PRIORITY_UID_FILTER_MAX_UID - SUSFS_PRIORITY_UID_FILTER_MIN_UID + 1)
+#define SUSFS_PRIORITY_UID_FILTER_BITMAP_LEN BITS_TO_LONGS(SUSFS_PRIORITY_UID_FILTER_UID_NUM)
+
 struct susfs_priority_uid_filter_bitmap {
 	struct rcu_head			rcu;
 	unsigned long			bits[SUSFS_PRIORITY_UID_FILTER_BITMAP_LEN];
@@ -1789,6 +1802,7 @@ bool susfs_is_priority_uid_filtered(uid_t uid) {
 
 	return false;
 }
+#endif // #ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
 
 /* susfs avc log spoofing */
 DEFINE_STATIC_KEY_FALSE(susfs_is_avc_log_spoofing_enabled);
@@ -1896,6 +1910,11 @@ void susfs_get_enabled_features(void __user **user_info) {
 	if (info->err) goto out_copy_to_user;
 	buf_ptr = info->enabled_features + copied_size;
 #endif
+#ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
+	info->err = copy_config_to_buf("CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER\n", buf_ptr, &copied_size, SUSFS_ENABLED_FEATURES_SIZE);
+	if (info->err) goto out_copy_to_user;
+	buf_ptr = info->enabled_features + copied_size;
+#endif // #ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
 
 	info->err = 0;
 out_copy_to_user:
