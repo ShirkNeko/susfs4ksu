@@ -2470,18 +2470,64 @@ index a4fb4138..1a2fb61c 100644
          free_module_rc();
      }
 diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
-index 768b9a26..2595940b 100644
+index 241eeeb0..2595940b 100644
 --- a/kernel/selinux/rules.c
 +++ b/kernel/selinux/rules.c
-@@ -161,6 +161,8 @@ void apply_kernelsu_rules()
+@@ -27,17 +27,17 @@ extern int avc_ss_reset(u32 seqno);
+ extern int avc_ss_reset(struct selinux_avc *avc, u32 seqno);
+ #endif
+ // reset avc cache table, otherwise the new rules will not take effect if already denied
+-static void reset_avc_cache(u32 seqno)
++static void reset_avc_cache()
+ {
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0))
+-    avc_ss_reset(seqno);
+-    selnl_notify_policyload(seqno);
+-    selinux_status_update_policyload(seqno);
++    avc_ss_reset(0);
++    selnl_notify_policyload(0);
++    selinux_status_update_policyload(0);
+ #else
+     struct selinux_avc *avc = selinux_state.avc;
+-    avc_ss_reset(avc, seqno);
+-    selnl_notify_policyload(seqno);
+-    selinux_status_update_policyload(&selinux_state, seqno);
++    avc_ss_reset(avc, 0);
++    selnl_notify_policyload(0);
++    selinux_status_update_policyload(&selinux_state, 0);
+ #endif
+     selinux_xfrm_notify_policyload();
+ }
+@@ -156,12 +156,13 @@ void apply_kernelsu_rules()
+     ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "getpgid");
+     ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "sigkill");
+ 
+-    pol->latest_granting = old_pol->latest_granting + 1;
+     rcu_assign_pointer(selinux_state.policy, pol);
+     synchronize_rcu();
      ksu_destroy_sepolicy(old_pol);
  
-     reset_avc_cache();
+-    reset_avc_cache(pol->latest_granting);
++    reset_avc_cache();
 +
 +    susfs_set_batch_sid();
  out_unlock:
      mutex_unlock(&selinux_state.policy_mutex);
  }
+@@ -516,12 +517,11 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
+         cmd_index++;
+     }
+ 
+-    pol->latest_granting = old_pol->latest_granting + 1;
+     rcu_assign_pointer(selinux_state.policy, pol);
+     synchronize_rcu();
+     ksu_destroy_sepolicy(old_pol);
+ 
+-    reset_avc_cache(pol->latest_granting);
++    reset_avc_cache();
+     ret = success_cmd_count;
+     goto out_unlock;
+ 
 diff --git a/kernel/selinux/selinux.c b/kernel/selinux/selinux.c
 index e5dcc4d3..72084b64 100644
 --- a/kernel/selinux/selinux.c
