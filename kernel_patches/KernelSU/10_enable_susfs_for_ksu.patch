@@ -599,7 +599,7 @@ index 7e337abf..8b6e0b3c 100644
      pr_info("handle umount for uid: %d, pid: %d\n", new_uid, current->pid);
  
 diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
-index 2a41b805..ede875e5 100644
+index 385b415a..036890d6 100644
 --- a/kernel/feature/selinux_hide.c
 +++ b/kernel/feature/selinux_hide.c
 @@ -1,9 +1,5 @@
@@ -979,7 +979,7 @@ index 2a41b805..ede875e5 100644
          ksu_selinux_hide_running = false;
      }
      mutex_unlock(&selinux_hide_mutex);
-@@ -1265,4 +1082,4 @@ out:
+@@ -1281,4 +1098,4 @@ out:
  allow:
      avd->allowed = 0xffffffff;
      goto out;
@@ -2480,7 +2480,7 @@ index a4fb4138..1a2fb61c 100644
          free_module_rc();
      }
 diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
-index 241eeeb0..2595940b 100644
+index 587f9306..2595940b 100644
 --- a/kernel/selinux/rules.c
 +++ b/kernel/selinux/rules.c
 @@ -27,17 +27,17 @@ extern int avc_ss_reset(u32 seqno);
@@ -2508,12 +2508,18 @@ index 241eeeb0..2595940b 100644
  #endif
      selinux_xfrm_notify_policyload();
  }
-@@ -156,12 +156,13 @@ void apply_kernelsu_rules()
-     ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "getpgid");
-     ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "sigkill");
+@@ -84,10 +84,6 @@ void apply_kernelsu_rules()
+ 
+     db = &pol->policydb;
  
 -    pol->latest_granting = old_pol->latest_granting + 1;
-     rcu_assign_pointer(selinux_state.policy, pol);
+-    if (!ksu_set_original_types(db, &old_pol->policydb, pol->latest_granting))
+-        pr_warn("failed to save original type metadata, use backup lookups\n");
+-
+     ksu_type(db, KERNEL_SU_DOMAIN, "domain");
+     ksu_permissive(db, KERNEL_SU_DOMAIN);
+     ksu_typeattribute(db, KERNEL_SU_DOMAIN, "mlstrustedsubject");
+@@ -164,7 +160,9 @@ void apply_kernelsu_rules()
      synchronize_rcu();
      ksu_destroy_sepolicy(old_pol);
  
@@ -2524,11 +2530,14 @@ index 241eeeb0..2595940b 100644
  out_unlock:
      mutex_unlock(&selinux_state.policy_mutex);
  }
-@@ -516,12 +517,11 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
+@@ -519,15 +517,11 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
          cmd_index++;
      }
  
 -    pol->latest_granting = old_pol->latest_granting + 1;
+-    if (!ksu_advance_original_types(db, &old_pol->policydb, old_pol->latest_granting, pol->latest_granting))
+-        pr_warn("failed to carry original type metadata, use backup lookups\n");
+-
      rcu_assign_pointer(selinux_state.policy, pol);
      synchronize_rcu();
      ksu_destroy_sepolicy(old_pol);
@@ -2654,7 +2663,7 @@ index b1918a42..5873f03e 100644
 +bool susfs_is_current_init_domain(void);
  #endif
 diff --git a/kernel/selinux/sepolicy.c b/kernel/selinux/sepolicy.c
-index b00e5175..e2e59d1a 100644
+index 54bc1b9b..15745877 100644
 --- a/kernel/selinux/sepolicy.c
 +++ b/kernel/selinux/sepolicy.c
 @@ -14,6 +14,11 @@
@@ -2669,7 +2678,7 @@ index b00e5175..e2e59d1a 100644
  #define KSU_SUPPORT_ADD_TYPE
  
  //////////////////////////////////////////////////////
-@@ -307,6 +312,10 @@ static bool add_rule_raw(struct policydb *db, struct type_datum *src, struct typ
+@@ -311,6 +316,10 @@ static bool add_rule_raw(struct policydb *db, struct type_datum *src, struct typ
                  return false;
          }
  
@@ -2680,7 +2689,7 @@ index b00e5175..e2e59d1a 100644
          if (invert) {
              if (perm)
                  node->datum.u.data &= ~(1U << (perm->value - 1));
-@@ -724,6 +733,9 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+@@ -728,6 +737,9 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
          ebitmap_set_bit(&db->role_val_to_struct[i]->types, value - 1, 1);
      }
  
