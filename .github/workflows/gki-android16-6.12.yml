@@ -9,4 +9,4 @@ jobs:
     with:
       upstream_repo: https://gitlab.com/simonpunk/susfs4ksu.git
       upstream_branch: gki-android16-6.12
-      local_branch: gki-android15-6.12
+      local_branch: gki-android16-6.12
