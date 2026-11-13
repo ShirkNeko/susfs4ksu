@@ -11,6 +11,7 @@ static void print_help(void) {
 	print_help_banner();
 
 	sus_path_print_help();
+	sus_path_uid_filter_print_help();
 	sus_mount_print_help();
 	sus_kstat_print_help();
 	sus_map_print_help();
@@ -43,6 +44,8 @@ int main(int argc, char *argv[]) {
 
 	if (!strcmp(argv[1], "add_sus_path"))
 		return add_sus_path(argc, argv);
+	if (!strcmp(argv[1], "set_sus_path_uid_filter"))
+		return set_sus_path_uid_filter(argc, argv);
 	if (!strcmp(argv[1], "add_sus_path_loop"))
 		return add_sus_path_loop(argc, argv);
 	if (!strcmp(argv[1], "hide_sus_mnts_for_non_su_procs"))
