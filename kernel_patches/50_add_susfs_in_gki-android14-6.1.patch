@@ -194,24 +194,24 @@ index 6999d609d..d2052e43c 100644
  	free_bprm(bprm);
  
 diff --git a/fs/namei.c b/fs/namei.c
-index 8e9c0b567..119b93fca 100644
+index 8e9c0b567..df7fdc7b4 100644
 --- a/fs/namei.c
 +++ b/fs/namei.c
 @@ -40,10 +40,21 @@
  #include <linux/bitops.h>
  #include <linux/init_task.h>
  #include <linux/uaccess.h>
-+#if defined(CONFIG_KSU_SUSFS_SUS_PATH) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
++#ifdef CONFIG_KSU_SUSFS
 +#include <linux/susfs_def.h>
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS
  
  #include "internal.h"
  #include "mount.h"
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-+extern bool susfs_is_inode_sus_path(struct inode *inode);
++extern __attribute__((hot)) bool susfs_is_inode_sus_path(struct inode *inode);
 +extern const struct qstr susfs_fake_qstr_name;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +extern struct filename *susfs_open_redirect_spoof_do_sys_openat(struct inode *inode);
 +#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
@@ -230,7 +230,7 @@ index 8e9c0b567..119b93fca 100644
 +		dput(dentry);
 +		return NULL;
 +	}
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	return dentry;
  }
  
@@ -240,7 +240,7 @@ index 8e9c0b567..119b93fca 100644
  	struct inode *dir = base->d_inode;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	bool found_sus_path = false;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  
  	if (dentry)
  		return dentry;
@@ -250,7 +250,7 @@ index 8e9c0b567..119b93fca 100644
  	dentry = d_alloc(base, name);
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +retry:
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	if (unlikely(!dentry))
  		return ERR_PTR(-ENOMEM);
  
@@ -268,7 +268,7 @@ index 8e9c0b567..119b93fca 100644
 +		found_sus_path = true;
 +		goto retry;
 +	}
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	return dentry;
  }
  EXPORT_SYMBOL(lookup_one_qstr_excl);
@@ -278,7 +278,7 @@ index 8e9c0b567..119b93fca 100644
  	int status = 1;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	bool is_nd_state_lookup_last_and_open_last = (nd->state & (ND_STATE_LOOKUP_LAST | ND_STATE_OPEN_LAST));
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  
  	/*
  	 * Rename seqlock is not required here because in the off chance
@@ -295,7 +295,7 @@ index 8e9c0b567..119b93fca 100644
 +			// no dput() here, __d_lookup_rcu() does not take the dentry->d_lockref.count
 +			dentry = NULL;
 +		}
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  		if (unlikely(!dentry)) {
  			if (!try_to_unlazy(nd))
  				return ERR_PTR(-ECHILD);
@@ -312,7 +312,7 @@ index 8e9c0b567..119b93fca 100644
 +			dput(dentry);
 +			dentry = NULL;
 +		}
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  		if (unlikely(!dentry))
  			return NULL;
  		status = d_revalidate(dentry, nd->flags);
@@ -323,7 +323,7 @@ index 8e9c0b567..119b93fca 100644
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	bool found_sus_path = false;
 +	bool is_nd_flags_lookup_last = (flags & ND_FLAGS_LOOKUP_LAST);
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  
  	/* Don't go there if it's already dead */
  	if (unlikely(IS_DEADDIR(inode)))
@@ -332,7 +332,7 @@ index 8e9c0b567..119b93fca 100644
  	dentry = d_alloc_parallel(dir, name, &wq);
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +retry:
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	if (IS_ERR(dentry))
  		return dentry;
  	if (unlikely(!d_in_lookup(dentry))) {
@@ -345,7 +345,7 @@ index 8e9c0b567..119b93fca 100644
 +					dentry = d_alloc_parallel(dir, &susfs_fake_qstr_name, &wq);
 +					goto retry;
 +				}
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  				goto again;
  			}
  			dput(dentry);
@@ -365,7 +365,7 @@ index 8e9c0b567..119b93fca 100644
 +		found_sus_path = true;
 +		goto retry;
 +	}
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	return dentry;
  }
  
@@ -377,7 +377,7 @@ index 8e9c0b567..119b93fca 100644
 +		if (nd->state & ND_STATE_LOOKUP_LAST) {
 +			nd->flags |= ND_FLAGS_LOOKUP_LAST;
 +		}
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  		dentry = lookup_slow(&nd->last, nd->path.dentry, nd->flags);
  		if (IS_ERR(dentry))
  			return ERR_CAST(dentry);
@@ -393,7 +393,7 @@ index 8e9c0b567..119b93fca 100644
 +			// - return -ENOENT here since it is walking the sub path of sus path
 +			return -ENOENT;
 +		}
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  
  		mnt_userns = mnt_user_ns(nd->path.mnt);
  		err = may_lookup(mnt_userns, nd);
@@ -403,7 +403,7 @@ index 8e9c0b567..119b93fca 100644
  		nd->flags |= LOOKUP_FOLLOW | LOOKUP_DIRECTORY;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	nd->state |= ND_STATE_LOOKUP_LAST;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  
  	return walk_component(nd, WALK_TRAILING);
  }
@@ -414,7 +414,7 @@ index 8e9c0b567..119b93fca 100644
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	bool found_sus_path = false;
 +	bool is_nd_state_open_last = (nd->state & ND_STATE_OPEN_LAST);
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  
  	if (unlikely(IS_DEADDIR(dir_inode)))
  		return ERR_PTR(-ENOENT);
@@ -432,7 +432,7 @@ index 8e9c0b567..119b93fca 100644
 +		dentry = NULL;
 +		found_sus_path = true;
 +	}
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	for (;;) {
  		if (!dentry) {
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
@@ -440,11 +440,11 @@ index 8e9c0b567..119b93fca 100644
 +				dentry = d_alloc_parallel(dir, &susfs_fake_qstr_name, &wq);
 +				goto skip_orig_flow;
 +			}
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  			dentry = d_alloc_parallel(dir, &nd->last, &wq);
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +skip_orig_flow:
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  			if (IS_ERR(dentry))
  				return dentry;
  		}
@@ -454,7 +454,7 @@ index 8e9c0b567..119b93fca 100644
  	const char *res;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	nd->state |= ND_STATE_OPEN_LAST;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  
  	nd->flags |= op->intent;
  
@@ -595,7 +595,7 @@ index 8e9c0b567..119b93fca 100644
 +
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +extern int susfs_open_redirect_spoof_vfs_readlink(struct inode *inode, char __user *buffer, int buflen);
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +
  int vfs_readlink(struct dentry *dentry, char __user *buffer, int buflen)
  {
@@ -611,11 +611,11 @@ index 8e9c0b567..119b93fca 100644
 +				if (!res)
 +					return res;
 +			}
- 			return inode->i_op->readlink(dentry, buffer, buflen);
++			return inode->i_op->readlink(dentry, buffer, buflen);
 +		}
 +#else
-+			return inode->i_op->readlink(dentry, buffer, buflen);
-+#endif
+ 			return inode->i_op->readlink(dentry, buffer, buflen);
++#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
  
  		if (!d_is_symlink(dentry))
  			return -EINVAL;
@@ -631,7 +631,7 @@ index 8e9c0b567..119b93fca 100644
 +			return res;
 +		}
 +	}
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
  	res = readlink_copy(buffer, buflen, link);
  	do_delayed_call(&done);
  	return res;
@@ -1712,17 +1712,17 @@ index 7a2ff6157..72d14c8e9 100644
  }
  
 diff --git a/fs/readdir.c b/fs/readdir.c
-index 9c53edb60..70c4fbcc4 100644
+index 9c53edb60..7d12eaa92 100644
 --- a/fs/readdir.c
 +++ b/fs/readdir.c
 @@ -24,6 +24,10 @@
  
  #include <asm/unaligned.h>
  
-+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++#ifdef CONFIG_KSU_SUSFS
 +#include <linux/susfs_def.h>
-+extern bool susfs_is_inode_sus_path(struct inode *inode);
-+#endif
++extern __attribute__((hot)) bool susfs_is_inode_sus_path(struct inode *inode);
++#endif // #ifdef CONFIG_KSU_SUSFS
  /*
   * Note the "unsafe_put_user() semantics: we goto a
   * label for errors.
@@ -1732,7 +1732,7 @@ index 9c53edb60..70c4fbcc4 100644
  	struct old_linux_dirent __user * dirent;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	struct super_block *sb;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	int result;
  };
  
@@ -1742,7 +1742,7 @@ index 9c53edb60..70c4fbcc4 100644
  	unsigned long d_ino;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	struct inode *inode;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  
  	if (buf->result)
  		return false;
@@ -1761,7 +1761,7 @@ index 9c53edb60..70c4fbcc4 100644
 +	}
 +	iput(inode);
 +orig_flow:
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	buf->result++;
  	dirent = buf->dirent;
  	if (!user_write_access_begin(dirent,
@@ -1771,7 +1771,7 @@ index 9c53edb60..70c4fbcc4 100644
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	buf.sb = f.file->f_inode->i_sb;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	error = iterate_dir(f.file, &buf.ctx);
  	if (buf.result)
  		error = buf.result;
@@ -1781,7 +1781,7 @@ index 9c53edb60..70c4fbcc4 100644
  	struct linux_dirent __user * current_dir;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	struct super_block *sb;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	int prev_reclen;
  	int count;
  	int error;
@@ -1791,7 +1791,7 @@ index 9c53edb60..70c4fbcc4 100644
  	int prev_reclen;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	struct inode *inode;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  
  	buf->error = verify_dirent_name(name, namlen);
  	if (unlikely(buf->error))
@@ -1811,7 +1811,7 @@ index 9c53edb60..70c4fbcc4 100644
 +	}
 +	iput(inode);
 +orig_flow:
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	dirent = buf->current_dir;
  	prev = (void __user *) dirent - prev_reclen;
  	if (!user_write_access_begin(prev, reclen + prev_reclen))
@@ -1821,7 +1821,7 @@ index 9c53edb60..70c4fbcc4 100644
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	buf.sb = f.file->f_inode->i_sb;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	error = iterate_dir(f.file, &buf.ctx);
  	if (error >= 0)
  		error = buf.error;
@@ -1831,7 +1831,7 @@ index 9c53edb60..70c4fbcc4 100644
  	struct linux_dirent64 __user * current_dir;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	struct super_block *sb;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	int prev_reclen;
  	int count;
  	int error;
@@ -1841,7 +1841,7 @@ index 9c53edb60..70c4fbcc4 100644
  	int prev_reclen;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	struct inode *inode;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  
  	buf->error = verify_dirent_name(name, namlen);
  	if (unlikely(buf->error))
@@ -1861,7 +1861,7 @@ index 9c53edb60..70c4fbcc4 100644
 +	}
 +	iput(inode);
 +orig_flow:
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	dirent = buf->current_dir;
  	prev = (void __user *)dirent - prev_reclen;
  	if (!user_write_access_begin(prev, reclen + prev_reclen))
@@ -1871,7 +1871,7 @@ index 9c53edb60..70c4fbcc4 100644
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	buf.sb = f.file->f_inode->i_sb;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	error = iterate_dir(f.file, &buf.ctx);
  	if (error >= 0)
  		error = buf.error;
@@ -1881,7 +1881,7 @@ index 9c53edb60..70c4fbcc4 100644
  	struct compat_old_linux_dirent __user *dirent;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	struct super_block *sb;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	int result;
  };
  
@@ -1891,7 +1891,7 @@ index 9c53edb60..70c4fbcc4 100644
  	compat_ulong_t d_ino;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	struct inode *inode;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  
  	if (buf->result)
  		return false;
@@ -1910,7 +1910,7 @@ index 9c53edb60..70c4fbcc4 100644
 +	}
 +	iput(inode);
 +orig_flow:
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	buf->result++;
  	dirent = buf->dirent;
  	if (!user_write_access_begin(dirent,
@@ -1920,7 +1920,7 @@ index 9c53edb60..70c4fbcc4 100644
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	buf.sb = f.file->f_inode->i_sb;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	error = iterate_dir(f.file, &buf.ctx);
  	if (buf.result)
  		error = buf.result;
@@ -1930,7 +1930,7 @@ index 9c53edb60..70c4fbcc4 100644
  	struct compat_linux_dirent __user *current_dir;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	struct super_block *sb;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	int prev_reclen;
  	int count;
  	int error;
@@ -1940,7 +1940,7 @@ index 9c53edb60..70c4fbcc4 100644
  	int prev_reclen;
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	struct inode *inode;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  
  	buf->error = verify_dirent_name(name, namlen);
  	if (unlikely(buf->error))
@@ -1959,7 +1959,7 @@ index 9c53edb60..70c4fbcc4 100644
 +	}
 +	iput(inode);
 +orig_flow:
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	dirent = buf->current_dir;
  	prev = (void __user *) dirent - prev_reclen;
  	if (!user_write_access_begin(prev, reclen + prev_reclen))
@@ -1969,7 +1969,7 @@ index 9c53edb60..70c4fbcc4 100644
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +	buf.sb = f.file->f_inode->i_sb;
-+#endif
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	error = iterate_dir(f.file, &buf.ctx);
  	if (error >= 0)
  		error = buf.error;

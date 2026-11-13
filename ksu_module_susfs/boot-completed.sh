@@ -5,18 +5,13 @@ MODDIR=/data/adb/modules/susfs4ksu
 
 SUSFS_BIN=/data/adb/ksu/bin/ksu_susfs
 
-#### Adding sus mounts to umount list via built-in KernelSU kernel umount (not via add_try_umount from old susfs) ####
+#### When the filter is set, only the listed apps can see the added sus paths ####
+## ksu_susfs set_sus_path_uid_filter <app_package_names_separated_by_comma> ##
 cat <<EOF >/dev/null
-## Don't forget to notify KernelSU that all ksu modules all mounted and ready ##
-/data/adb/ksu/bin/ksud kernel notify-module-mounted
-
-## This is just an example to add the sus mounts to kernel umount ##
-if [ ! -f "/data/adb/susfs_no_auto_add_kernel_umount" ]; then
-	cat /proc/1/mountinfo | grep -E "^2[0-9]{9,} .*$|KSU" | awk '{print $5}' | while read -r LINE; do /data/adb/ksu/bin/ksud kernel umount add --flags 2 "${LINE}" 2>/dev/null; done
-fi
+ksu_susfs set_sus_path_uid_filter "com.termux,org.frknkrc44.hma_oss,io.github.vvb2060.keyattestation"
 EOF
 
-#### Hide some sus paths, effective only for processes that are marked umounted with uid >= 10000 ####
+#### Hide some sus paths from all processes with uid >= 10000 that are not in set_sus_path_uid_filter ####
 cat <<EOF >/dev/null
 ## First we need to wait until files are accessible in /sdcard ##
 until [ -d "/sdcard/Android" ]; do sleep 3; done
@@ -29,6 +24,7 @@ until [ -d "/sdcard/Android" ]; do sleep 3; done
 [ -e "/sdcard/..5.u.S" ] && rm -rf "/sdcard/..5.u.S"
 [ -e "/sdcard/Android/data/..5.u.S" ] && rm -rf "/sdcard/Android/data/..5.u.S"
 [ -e "/sdcard/Android/media/..5.u.S" ] && rm -rf "/sdcard/Android/media/..5.u.S"
+[ -e "/sdcard/Android/obb/..5.u.S" ] && rm -rf "/sdcard/Android/obb/..5.u.S"
 
 ## For paths that are read-only all the time, add them via 'add_sus_path' ##
 ${SUSFS_BIN} add_sus_path /sys/block/loop0
@@ -90,3 +86,4 @@ EOF
 cat <<EOF >/dev/null
 ksu_susfs set_priority_uid_filter "com.termux,org.frknkrc44.hma_oss,io.github.vvb2060.keyattestation"
 EOF
+

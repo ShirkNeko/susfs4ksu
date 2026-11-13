@@ -1634,7 +1634,7 @@ index be25a826..7f2870a8 100644
  extern bool ksu_no_custom_rc;
  
 diff --git a/kernel/manager/pkg_observer.c b/kernel/manager/pkg_observer.c
-index dc785e37..34d5b240 100644
+index dc785e37..658fc18c 100644
 --- a/kernel/manager/pkg_observer.c
 +++ b/kernel/manager/pkg_observer.c
 @@ -8,6 +8,7 @@
@@ -1645,7 +1645,7 @@ index dc785e37..34d5b240 100644
  #include "klog.h" // IWYU pragma: keep
  #include "manager/throne_tracker.h"
  
-@@ -30,6 +31,10 @@ static void ksu_track_throne_tw_func(struct callback_head *cb)
+@@ -30,6 +31,15 @@ static void ksu_track_throne_tw_func(struct callback_head *cb)
      if (current->flags & PF_EXITING)
          return;
      track_throne(false);
@@ -1653,6 +1653,11 @@ index dc785e37..34d5b240 100644
 +    // Renew the priority uid bitmap filter
 +    susfs_parse_priority_app_strings();
 +#endif // #ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
++#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++    // Renew the sus path uid bitmap filter
++    susfs_parse_sus_path_app_strings();
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
++
  }
  
  // Never scan from the fsnotify handler: fsnotify_mark_srcu and the rename's dir
@@ -2881,7 +2886,7 @@ index 635ec01c..c7b28b86 100644
  int ksu_sulog_emit_grant_root(int retval, __u32 uid, __u32 euid, gfp_t gfp);
  
 diff --git a/kernel/supercall/dispatch.c b/kernel/supercall/dispatch.c
-index caf18c7c..181ce099 100644
+index caf18c7c..4373f4b7 100644
 --- a/kernel/supercall/dispatch.c
 +++ b/kernel/supercall/dispatch.c
 @@ -8,6 +8,8 @@
@@ -3050,7 +3055,7 @@ index caf18c7c..181ce099 100644
      }
      if (copy_to_user(arg, &cmd, sizeof(cmd))) {
          pr_err("manage_mark: copy_to_user failed\n");
-@@ -532,6 +496,92 @@ static int do_manage_mark(void __user *arg)
+@@ -532,6 +496,95 @@ static int do_manage_mark(void __user *arg)
      return 0;
  }
  
@@ -3069,6 +3074,9 @@ index caf18c7c..181ce099 100644
 +                return 0;
 +            case CMD_SUSFS_ADD_SUS_PATH_LOOP:
 +                susfs_add_sus_path_loop(arg);
++                return 0;
++            case CMD_SUSFS_SET_SUS_PATH_UID_FILTER:
++                susfs_set_sus_path_uid_filter(arg);
 +                return 0;
 +#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 +#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
